@@ -125,6 +125,11 @@ svg.chart{width:100%;height:auto;display:block}
 .exnote{font-size:13px;color:var(--tx);margin:-2px 0 10px;padding:7px 9px;background:var(--accd);border-radius:9px;white-space:pre-wrap;word-break:break-word}
 .swapof{font-size:12px;color:var(--acc);margin-top:2px}
 .nbtns{display:flex;gap:8px;margin-top:9px}
+.feelq{font-size:14px;font-weight:650;margin:2px 2px 8px}
+.feels{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:12px}
+.feels button{background:var(--card);border-radius:12px;padding:9px 2px;font-size:11px;color:var(--mut);line-height:1.2}
+.feels button span{display:block;font-size:22px;margin-bottom:3px}
+.feels button.on{background:var(--grad);color:#fff;font-weight:700}
 </style>
 </head>
 <body>
@@ -276,7 +281,7 @@ function metric(sets,unit,m){
  return S.reduce((a,s)=>a+(s.w||0)*s.r,0);
 }
 const mLabel=(unit,m)=>unit==='corpo'?(m==='vol'?'Reps totais':'Máx reps'):unit==='cardio'?(m==='vol'?'Minutos':'Minutos'):({top:'Carga máx',e1rm:'1RM estimado',vol:'Volume'})[m];
-function history(exId){const out=[];for(let i=sessions.length-1;i>=0;i--){const s=sessions[i];const e=s.ex.find(x=>x.id===exId);if(e&&validSets(e.sets,e.unit).length)out.push({date:s.date,ts:s.ts,e})}return out}
+function history(exId){const out=[];for(let i=sessions.length-1;i>=0;i--){const s=sessions[i];const e=s.ex.find(x=>x.id===exId);if(e&&validSets(e.sets,e.unit).length)out.push({date:s.date,ts:s.ts,e,s})}return out}
 function lastFor(exId){for(const s of sessions){const e=s.ex.find(x=>x.id===exId);if(e&&validSets(e.sets,e.unit).length)return {date:s.date,e}}return null}
 function summarize(sets,unit){
  const S=validSets(sets,unit);const u=UNITS[unit]||UNITS.kg;
@@ -335,6 +340,11 @@ function applySwap(tg){const orig=plan.days[ui.day].ex.find(e=>e.id===ui.swap);c
 // Troca sem série feita não sobrevive à virada do dia
 function dropOldSwaps(){let ch=false;Object.values(drafts).forEach(d=>{Object.entries(d.swaps||{}).forEach(([k,s])=>{if(s.date!==todayStr()&&!(d.vals[s.id]||[]).some(v=>v&&v.done)){delete d.vals[s.id];delete d.swaps[k];ch=true}})});if(ch)saveDrafts();return ch}
 
+// ---------- Como se sentiu ----------
+const FEELS=[[1,'😩','Fraco'],[2,'🥱','Cansado'],[3,'😐','Normal'],[4,'💪','Forte'],[5,'🔥','Muito forte']];
+const feelOf=s=>FEELS.find(f=>f[0]===s.feel);
+const feelRow=s=>`<div class="feels">${FEELS.map(([k,e,l])=>`<button class="${s.feel===k?'on':''}" data-act="feel" data-s="${s.id}" data-k="${k}"><span>${e}</span>${l}</button>`).join('')}</div>`;
+
 // ---------- Lembrete de backup ----------
 const BACKUP_DAYS=7;
 function backupDue(){if(!sessions.length||Date.now()<LS.get('backup_snooze',0))return false;const last=LS.get('backup_at',0);
@@ -357,7 +367,7 @@ function render(){
  updClock();
 }
 function getDraft(day){if(!drafts[day])drafts[day]={startedAt:null,vals:{}};return drafts[day]}
-function draftHas(d){return d&&(Object.keys(d.swaps||{}).length>0||Object.values(d.vals).some(a=>a.some(v=>v&&(v.done||v.w!=null||v.r!=null))))}
+function draftHas(d){return d&&(!!d.startedAt||Object.keys(d.swaps||{}).length>0||Object.values(d.vals).some(a=>a.some(v=>v&&(v.done||v.w!=null||v.r!=null))))}
 
 function greet(){const h=new Date().getHours();return h<12?'Bom dia':h<18?'Boa tarde':'Boa noite'}
 function rTreino(){
@@ -365,7 +375,7 @@ function rTreino(){
  const dd=plan.days[ui.day],drr=getDraft(ui.day);let tot=0,dn=0;
  const exs=dayEx(ui.day);
  exs.forEach(e=>{const v=drr.vals[e.id]||[];const n=Math.max(e.sets,v.length);tot+=n;for(let i=0;i<n;i++)if(v[i]&&v[i].done)dn++});
- let h=`<div class="prog"><div class="pt"><span>${dn?`<b>${dn}</b> de ${tot} séries feitas`:`${tot} séries hoje`}<span id="clock"></span></span>${dn?'<button class="pbtn" data-act="finish">Finalizar</button>':''}</div><div class="bar"><i style="width:${tot?dn/tot*100:0}%"></i></div></div>`;
+ let h=`<div class="prog"><div class="pt"><span>${dn?`<b>${dn}</b> de ${tot} séries feitas`:`${tot} séries hoje`}<span id="clock"></span></span>${dn?'<button class="pbtn" data-act="finish">Finalizar</button>':isLive(drr)?'':'<button class="pbtn" data-act="start">Começar</button>'}</div><div class="bar"><i style="width:${tot?dn/tot*100:0}%"></i></div></div>`;
  h+=`<div class="hello">${greet()}, Yuri 👋</div>`;
  if(!dn&&backupDue()){const ago=backupAgo();h+=`<div class="note">${ago?`Seu último backup foi ${ago}.`:'Você ainda não fez nenhum backup.'} Seus treinos só existem neste celular.<div class="nbtns"><button class="pbtn" data-act="bexport">Fazer backup</button><button class="ghost" data-act="bsnooze">Depois</button></div></div>`}
  h+=`<div class="chips">${DAYS.map(([k,l])=>`<button class="chip ${ui.day===k?'on':''} ${doneDays.has(k)?'dn':''}" data-act="day" data-k="${k}">${l}</button>`).join('')}</div>`;
@@ -492,7 +502,8 @@ function rEvolucao(){
  h+=`<div class="stats"><div class="stat"><div class="v">${fmtN(cur)}</div><div class="k">Atual (${unitL})</div></div><div class="stat"><div class="v">${fmtN(best)}</div><div class="k">Recorde</div></div><div class="stat"><div class="v ${delta>0?'pos':delta<0?'neg':''}">${delta==null?'–':(delta>0?'+':'')+fmtN(delta)}</div><div class="k">vs 4 semanas</div></div></div>`;
  if(ui.evoM==='e1rm')h+=`<div class="note">1RM estimado é a carga que você levantaria em 1 repetição, calculada a partir das suas séries. Serve pra comparar dias com reps diferentes.</div>`;
  h+=`<div class="h2">Comparar sessões</div><div class="card">`+hs.slice().reverse().slice(0,8).map((x,i,a)=>{const nx=a[i+1];const v=metric(x.e.sets,x.e.unit,ui.evoM),pv=nx?metric(nx.e.sets,nx.e.unit,ui.evoM):null;const dd=pv!=null&&v!=null?v-pv:null;
-  return `<div class="row"><div><div class="r1">${fmtD(x.date)}</div><div class="r2">${esc(summarize(x.e.sets,x.e.unit))}</div></div><div class="${dd>0?'pos':dd<0?'neg':'r2'}" style="font-weight:700;white-space:nowrap">${dd==null?'':(dd>0?'▲ +':dd<0?'▼ ':'= ')+(dd?fmtN(dd):'')}</div></div>`}).join('')+`</div>`;
+  const fl=feelOf(x.s);
+  return `<div class="row"><div><div class="r1">${fmtD(x.date)}${fl?' '+fl[1]:''}</div><div class="r2">${esc(summarize(x.e.sets,x.e.unit))}</div></div><div class="${dd>0?'pos':dd<0?'neg':'r2'}" style="font-weight:700;white-space:nowrap">${dd==null?'':(dd>0?'▲ +':dd<0?'▼ ':'= ')+(dd?fmtN(dd):'')}</div></div>`}).join('')+`</div>`;
  h+=`<div class="h2">Todos os exercícios</div><div class="card">`+exs.map(e=>{const H=history(e.id);const a=H[H.length-1],b=H[H.length-2];const va=metric(a.e.sets,a.e.unit,'top'),vb=b?metric(b.e.sets,b.e.unit,'top'):null;const dd=vb!=null?va-vb:null;const ul=e.unit==='corpo'?'reps':e.unit==='cardio'?'min':(UNITS[e.unit]||UNITS.kg).l;
   return `<div class="row ${e.id===ex.id?'sel':''}" data-act="evopick" data-k="${e.id}"><div><div class="r1">${esc(e.name)}</div><div class="r2">${H.length} ${H.length===1?'sessão':'sessões'} · última ${fmtD(a.date)}</div></div><div style="text-align:right;white-space:nowrap"><div style="font-weight:700">${fmtN(va)} <span class="r2">${ul}</span></div><div class="${dd>0?'pos':dd<0?'neg':'r2'}" style="font-size:12px">${dd==null?'':dd>0?'▲ +'+fmtN(dd):dd<0?'▼ '+fmtN(dd):'='}</div></div></div>`}).join('')+`</div>`;
  return h;
@@ -514,9 +525,9 @@ function sessVol(s){return s.ex.reduce((a,e)=>a+(['kg','kglado','placas'].includ
 function rBackup(){const ago=backupAgo();return `<div class="h2">Backup</div><div class="card"><div class="exm" style="margin-bottom:10px">Seus treinos ficam salvos no celular. Faça um backup de vez em quando (salve no Arquivos ou no iCloud) pra não perder nada se trocar de aparelho.<br><b>${ago?'Último backup: '+ago:'Nenhum backup feito ainda'}</b></div><div class="mrow" style="margin-top:0"><button class="ghost" style="padding:12px" data-act="bimport">Importar</button><button class="primary" data-act="bexport">Exportar backup</button></div><input type="file" id="bfile" accept="application/json,.json" style="display:none"></div>`}
 function rHistorico(){
  if(!sessions.length)return `<div class="empty">Nenhum treino finalizado ainda.</div>`+rBackup();
- return sessions.slice(0,60).map(s=>{const dn=DAYS.find(d=>d[0]===s.day);const open=ui.open===s.id;
-  return `<div class="card"><div class="row" style="padding:0;border:0" data-act="hopen" data-k="${s.id}"><div><div class="r1">${dn?dn[2]:''} · ${fmtD(s.date)}</div><div class="r2">${esc(s.dayName||'')} · ${s.ex.length} exercícios${s.dur?' · '+s.dur+' min':''}</div></div><span class="r2">${open?'▲':'▼'}</span></div>`+
-  (open?`<div style="margin-top:8px">${s.ex.map(e=>`<div class="sumx"><b>${esc(e.name)}</b><div class="r2" style="color:var(--mut)">${esc(summarize(e.sets,e.unit))}</div></div>`).join('')}<button class="link danger" data-act="hdel" data-k="${s.id}">Apagar este treino</button></div>`:'')+`</div>`}).join('')+rBackup();
+ return sessions.slice(0,60).map(s=>{const dn=DAYS.find(d=>d[0]===s.day);const open=ui.open===s.id;const fl=feelOf(s);
+  return `<div class="card"><div class="row" style="padding:0;border:0" data-act="hopen" data-k="${s.id}"><div><div class="r1">${dn?dn[2]:''} · ${fmtD(s.date)}${fl?' '+fl[1]:''}</div><div class="r2">${esc(s.dayName||'')} · ${s.ex.length} exercícios${s.dur?' · '+s.dur+' min':''}${fl?' · '+fl[2]:''}</div></div><span class="r2">${open?'▲':'▼'}</span></div>`+
+  (open?`<div style="margin-top:12px"><div class="feelq">Como você se sentiu?</div>${feelRow(s)}${s.ex.map(e=>`<div class="sumx"><b>${esc(e.name)}</b><div class="r2" style="color:var(--mut)">${esc(summarize(e.sets,e.unit))}</div></div>`).join('')}<button class="link danger" data-act="hdel" data-k="${s.id}">Apagar este treino</button></div>`:'')+`</div>`}).join('')+rBackup();
 }
 
 // ---------- Modal ----------
@@ -576,6 +587,10 @@ const A={
    const nx=cards.slice(k+1).find(c=>!c.classList.contains('ok'));if(nx)setTimeout(()=>nx.scrollIntoView({behavior:'smooth',block:'start'}),150)}
  },
  addset:t=>{const id=t.dataset.ex;const dr=getDraft(ui.day);const ex=dayEx(ui.day).find(e=>e.id===id);const vals=dr.vals[id]||(dr.vals[id]=[]);const n=Math.max(ex.sets,vals.length);while(vals.length<n+1)vals.push({});saveDrafts();const y=window.scrollY;render();window.scrollTo(0,y)},
+ start:()=>{getDraft(ui.day).startedAt=Date.now();saveDrafts();unlockAudio();syncAwake();const y=window.scrollY;render();window.scrollTo(0,y)},
+ feel:t=>{const s=sessions.find(x=>x.id===t.dataset.s);if(!s)return;const k=+t.dataset.k;s.feel=s.feel===k?null:k;cache();Cloud.w(s.id,s);
+  const inSheet=!!t.closest('#sheet');if(inSheet)t.parentElement.querySelectorAll('button').forEach(b=>b.classList.toggle('on',+b.dataset.k===s.feel));
+  const y=window.scrollY;render();window.scrollTo(0,y)},
  discard:()=>confirmBox('Descartar o treino em andamento?',()=>{delete drafts[ui.day];saveDrafts();syncAwake();render()}),
  swap:t=>{ui.swap=t.dataset.k;rSwap()},
  swappick:t=>{const orig=plan.days[ui.day].ex.find(e=>e.id===ui.swap);const o=swapOptions(orig).find(e=>e.id===t.dataset.k);if(o)applySwap(o)},
@@ -602,7 +617,7 @@ const A={
    const pr=best!=null&&v>best;const dd=pv!=null?v-pv:null;
    return `<div class="sumx"><b>${esc(e.name)}</b>${pr?'<span class="pr">RECORDE</span>':''}<div style="display:flex;justify-content:space-between;color:var(--mut);font-size:13px"><span>${esc(summarize(e.sets,e.unit))}</span><span class="${dd>0?'pos':dd<0?'neg':''}">${dd==null?'1ª vez':dd>0?'▲':dd<0?'▼':'='}</span></div></div>`}).join('');
   ui.mus='last';
-  modal(`<h3>Treino salvo 💪</h3><div class="stats"><div class="stat"><div class="v">${s.dur||'–'}</div><div class="k">minutos</div></div><div class="stat"><div class="v">${ex.reduce((a,e)=>a+e.sets.length,0)}</div><div class="k">séries</div></div><div class="stat"><div class="v">${fmtN(vol/1000)}t</div><div class="k">volume</div></div></div><div class="card">${rows}</div><div class="exm" style="margin:-2px 2px 10px">▲▼ comparam com a última vez que você fez o exercício.</div><div class="mrow"><button class="ghost" data-act="close">Fechar</button><button class="primary" data-act="seemus">Ver músculos</button></div>`);
+  modal(`<h3>Treino salvo 💪</h3><div class="feelq">Como você se sentiu hoje?</div>${feelRow(s)}<div class="stats"><div class="stat"><div class="v">${s.dur||'–'}</div><div class="k">minutos</div></div><div class="stat"><div class="v">${ex.reduce((a,e)=>a+e.sets.length,0)}</div><div class="k">séries</div></div><div class="stat"><div class="v">${fmtN(vol/1000)}t</div><div class="k">volume</div></div></div><div class="card">${rows}</div><div class="exm" style="margin:-2px 2px 10px">▲▼ comparam com a última vez que você fez o exercício.</div><div class="mrow"><button class="ghost" data-act="close">Fechar</button><button class="primary" data-act="seemus">Ver músculos</button></div>`);
   render();
  },
  seemus:()=>{closeModal();ui.tab='musculos';render();window.scrollTo(0,0)},

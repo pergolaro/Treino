@@ -266,11 +266,11 @@ function toast(t){const el=$('#toast');el.textContent=t;el.classList.add('show')
 let plan=LS.get('plan_v1',null);
 // Plano salvo de uma versão anterior dá lugar ao padrão novo
 const planUpgraded=!!plan&&(plan.v||1)<2;
-if(!plan||planUpgraded){plan=clone(DEFAULT_PLAN);LS.set('plan_v1',plan)}
+if(!plan||planUpgraded){plan=clone(DEFAULT_PLAN);LS.set('plan_v1',plan);LS.set('plan_u',Date.now())}
 else if(plan.v<DEFAULT_PLAN.v){// Ajustes sem apagar o que foi editado no celular
  if(plan.v<3)(plan.days.sex.ex||[]).forEach(e=>{if(e.id==='rosca_martelo'||e.id==='triceps_corda')e.bs='b1'});// v3: bi-set na sexta
  if(plan.v<4)DAYS.forEach(([k])=>(plan.days[k].ex||[]).forEach(fixReps));// v4: faixas só 6-8 ou 8-10
- plan.v=DEFAULT_PLAN.v;LS.set('plan_v1',plan)}
+ plan.v=DEFAULT_PLAN.v;LS.set('plan_v1',plan);LS.set('plan_u',Date.now())}
 let sessions=LS.get('sessions_v1',[]);
 let bw=LS.get('bw_v1',[]);
 let drafts=LS.get('drafts_v1',{});
@@ -279,7 +279,7 @@ const wd=new Date().getDay();
 let ui={calM:0,tab:'treino',day:['seg','seg','ter','qua','qui','sex','seg'][wd],mus:'last',evoEx:null,evoM:'top',open:null,openEx:new Set()};
 const sortS=()=>sessions.sort((a,b)=>b.ts<a.ts?-1:1);
 sortS();
-function cache(){LS.set('plan_v1',plan);LS.set('sessions_v1',sessions);LS.set('bw_v1',bw)}
+function cache(){LS.set('plan_v1',plan);LS.set('sessions_v1',sessions);LS.set('bw_v1',bw);if(Sync)Sync.soon()}
 
 // ---------- Nuvem (db) ----------
 const Cloud={col:null,q:{},
@@ -311,10 +311,10 @@ const Cloud={col:null,q:{},
  migrate(){sessions.forEach(s=>this.w(s.id,s));if(bw.length)this.w('bw',{entries:bw});this.w('plan',{plan})}
 };
 function setSync(t){$('#sync').textContent=t}
-function savePlan(){cache();Cloud.w('plan',{plan})}
+function savePlan(){LS.set('plan_u',Date.now());cache();Cloud.w('plan',{plan})}
 function saveBW(){cache();Cloud.w('bw',{entries:bw})}
 function saveDrafts(){LS.set('drafts_v1',drafts)}
-function saveNotes(){LS.set('notes_v1',notes)}
+function saveNotes(){LS.set('notes_v1',notes);if(Sync)Sync.soon()}
 
 // ---------- Cálculos ----------
 const validSets=(sets,unit)=>sets.filter(s=>unit==='cardio'?s.w!=null:s.r!=null);
@@ -364,7 +364,7 @@ const MAX_MIN=240;
 const isLive=d=>!!(d&&d.startedAt&&Date.now()-d.startedAt<MAX_MIN*60000&&draftHas(d));
 const workoutOn=()=>Object.values(drafts).some(isLive);
 let wl=null,wlBusy=false;
-function showAwake(){setSync(wl?'tela ligada':'salvo no celular')}
+function showAwake(){setSync(wl?'tela ligada':Sync&&Sync.on()?(LS.get('sync_err','')?'⚠ Mac fora do ar':LS.get('sync_at',0)?'☁ salvo no Mac':'salvo no celular'):'salvo no celular')}
 async function keepAwake(){if(wl||wlBusy||document.visibilityState!=='visible'||!navigator.wakeLock)return;wlBusy=true;
  try{wl=await navigator.wakeLock.request('screen');wl.addEventListener('release',()=>{wl=null;showAwake()})}catch(e){wl=null}
  wlBusy=false;if(!workoutOn())letSleep();showAwake()}
@@ -565,6 +565,50 @@ function rGame(){const r=xpReport();const [emo,name]=rankOf(r.lvl);const nx=r.lv
  `<div class="h2">Conquistas · ${got}/${ACH.length}</div><div class="ach">${ACH.map(([e,l,d,f])=>`<div class="${f(r)?'':'off'}"><span>${e}</span><b>${l}</b><small>${d}</small></div>`).join('')}</div>`+
  `<div class="h2">Como ganhar XP</div><div class="card" style="font-size:14px;color:var(--mut);line-height:1.6">Série de composto +15 · isolador +10 · abdômen +5<br>Treino finalizado +50 · em até ${LIMIT_MIN} min +20<br>Recorde +50 por exercício<br>Semana com 4 treinos +100 · com 5 treinos +200<br>Missões da semana +50 a +150 cada<br>A sequência conta semanas seguidas com 4 ou mais treinos.</div><button class="primary" style="width:100%;margin-top:4px" data-act="close">Bora treinar</button>`}
 
+// ---------- Banco no Mac ----------
+// O app continua salvando no celular; quando o Mac responde, manda tudo e recebe o estado do banco.
+// Em cada registro vale o "u" (hora da última mudança) mais recente; apagar vira lápide para o Mac saber.
+const TOMB0=()=>({s:{},bw:{},n:{}});
+function markDel(kind,key){const t=LS.get('tomb_v1',TOMB0());t[kind][key]=Date.now();LS.set('tomb_v1',t)}
+function unmarkDel(kind,key){const t=LS.get('tomb_v1',TOMB0());if(key in t[kind]){delete t[kind][key];LS.set('tomb_v1',t)}}
+const uS=s=>s.u||Date.parse(s.ts)||1,uB=b=>b.u||Date.parse(b.date)||1;
+var Sync={busy:false,again:false,quiet:false,t:null,
+ on(){return !!(cfg.srv&&cfg.tok)},
+ url(){return cfg.srv.trim().replace(/\/+$/,'')+'/api/sync'},
+ soon(){if(this.quiet||!this.on())return;clearTimeout(this.t);this.t=setTimeout(()=>this.run(),1500)},
+ payload(){const t=LS.get('tomb_v1',TOMB0()),nu=LS.get('notes_u',{});
+  return {sessions:[...sessions.map(s=>({...s,u:uS(s)})),...Object.entries(t.s).map(([id,u])=>({id,u,del:true}))],
+   bw:[...bw.map(b=>({...b,u:uB(b)})),...Object.entries(t.bw).map(([date,u])=>({date,u,del:true}))],
+   notes:[...Object.entries(notes).map(([id,text])=>({id,text,u:nu[id]||1})),...Object.entries(t.n).map(([id,u])=>({id,u,del:true}))],
+   plan:{data:plan,u:LS.get('plan_u',1)}}},
+ async run(manual){if(!this.on())return;if(this.busy){this.again=true;return}this.busy=true;
+  try{const r=await fetch(this.url(),{method:'POST',headers:{'Authorization':'Bearer '+cfg.tok.trim(),'Content-Type':'application/json'},body:JSON.stringify(this.payload())});
+   if(!r.ok)throw new Error(r.status===401?'token inválido':'erro '+r.status);
+   const ch=this.merge(await r.json());LS.set('sync_at',Date.now());LS.set('sync_err','');
+   if(ch){this.quiet=true;cache();LS.set('notes_v1',notes);this.quiet=false;if(!$('#modal').classList.contains('show'))render()}
+   if(manual)toast(ch?'Sincronizado: chegou coisa nova do Mac':'Sincronizado com o Mac')}
+  catch(e){LS.set('sync_err',String(e.message||e));if(manual)toast('Não conectou com o Mac: '+(e.message||e))}
+  this.busy=false;showAwake();const el=$('#syncinfo');if(el)el.textContent=syncInfo();
+  if(this.again){this.again=false;this.run()}},
+ merge(d){let ch=false;const t=LS.get('tomb_v1',TOMB0()),nu=LS.get('notes_u',{});
+  const ms=new Map(sessions.map(s=>[s.id,s]));let sc=false;
+  (d.sessions||[]).forEach(r=>{const l=ms.get(r.id),lu=l?uS(l):(t.s[r.id]||0);if(r.u<=lu)return;
+   if(r.del){if(l){ms.delete(r.id);sc=true}t.s[r.id]=r.u;return}
+   delete t.s[r.id];const {del,...x}=r;ms.set(r.id,x);sc=true});
+  if(sc){sessions=[...ms.values()];sortS();ch=true}
+  const mb=new Map(bw.map(b=>[b.date,b]));let bc=false;
+  (d.bw||[]).forEach(r=>{const l=mb.get(r.date),lu=l?uB(l):(t.bw[r.date]||0);if(r.u<=lu)return;
+   if(r.del){if(l){mb.delete(r.date);bc=true}t.bw[r.date]=r.u;return}
+   delete t.bw[r.date];mb.set(r.date,{date:r.date,kg:r.kg,u:r.u});bc=true});
+  if(bc){bw=[...mb.values()].sort((a,b)=>a.date<b.date?-1:1);ch=true}
+  (d.notes||[]).forEach(r=>{const has=r.id in notes,lu=has?(nu[r.id]||1):(t.n[r.id]||0);if(r.u<=lu)return;
+   if(r.del){if(has){delete notes[r.id];ch=true}delete nu[r.id];t.n[r.id]=r.u;return}
+   delete t.n[r.id];notes[r.id]=r.text;nu[r.id]=r.u;ch=true});
+  if(d.plan&&d.plan.data&&d.plan.data.days&&d.plan.u>LS.get('plan_u',1)){plan=d.plan.data;LS.set('plan_u',d.plan.u);ch=true}
+  LS.set('tomb_v1',t);LS.set('notes_u',nu);return ch}};
+function syncInfo(){if(!Sync.on())return 'Desligado: preencha o endereço e o token.';const at=LS.get('sync_at',0),err=LS.get('sync_err',''),q=x=>new Date(x).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+ return err?`Sem conexão (${err}).${at?' Última vez: '+q(at):''}`:at?'Última sincronização: '+q(at):'Ainda não sincronizou.'}
+
 // ---------- Render ----------
 const ICONS={
  treino:'<svg viewBox="0 0 24 24"><path d="M6 7v10M3 9.5v5M18 7v10M21 9.5v5M6 12h12"/></svg>',
@@ -745,6 +789,8 @@ function rPeso(){
 
 function sessVol(s){return s.ex.reduce((a,e)=>a+(['kg','kglado','placas'].includes(e.unit)?metric(e.sets,e.unit,'vol')||0:0),0)}
 function rBackup(){const ago=backupAgo();return `<div class="h2">Backup</div><div class="card"><div class="exm" style="margin-bottom:10px">Seus treinos ficam salvos no celular. Faça um backup de vez em quando (salve no Arquivos ou no iCloud) pra não perder nada se trocar de aparelho.<br><b>${ago?'Último backup: '+ago:'Nenhum backup feito ainda'}</b></div><div class="mrow" style="margin-top:0"><button class="ghost" style="padding:12px" data-act="bimport">Importar</button><button class="primary" data-act="bexport">Exportar backup</button></div><input type="file" id="bfile" accept="application/json,.json" style="display:none"></div>`}
+function rBanco(){const f=(k,l,ph)=>`<label>${l}<input data-cfgtxt="${k}" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="${ph}" value="${esc(cfg[k]||'')}"></label>`;
+ return `<div class="h2">Banco no Mac</div><div class="card"><div class="exm" style="margin-bottom:10px">Cada treino, peso e nota também vai para o banco do seu Mac. Sem conexão, fica guardado aqui e vai depois.</div>${f('srv','Endereço do Mac','https://…')}${f('tok','Token','cole o token do Mac')}<div id="syncinfo" style="font-size:12px;color:var(--mut);margin:2px 0 10px">${syncInfo()}</div><button class="primary" style="width:100%" data-act="syncnow">Sincronizar agora</button></div>`}
 function rAjustes(){const f=(k,l)=>`<label>${l}<input inputmode="decimal" data-cfg="${k}" value="${fmtN(cfg[k])}"></label>`;
  return `<div class="h2">Aparelhos da academia</div><div class="card"><div class="exm" style="margin-bottom:10px">O app usa esses limites para saber quando você chegou no máximo e sugerir outro jeito de progredir.</div><div class="erow">${f('pulley','Placas do pulley')}${f('cross','Polia do cross (kg)')}</div><div class="erow">${f('halter','Halter mais pesado (kg)')}${f('barra','Barra (kg)')}</div></div>`}
 function rCal(){const n=new Date();const base=new Date(n.getFullYear(),n.getMonth()+ui.calM,1);const y=base.getFullYear(),m=base.getMonth();
@@ -756,10 +802,10 @@ function rCal(){const n=new Date();const base=new Date(n.getFullYear(),n.getMont
  const cnt=Object.keys(by).filter(k=>k.startsWith(y+'-'+pad(m+1))).length;
  return `<div class="card"><div class="calhead"><button data-act="calprev">‹</button><b>${MES[m]} ${y}</b><button data-act="calnext" ${ui.calM>=0?'disabled':''}>›</button></div><div class="cal">${['S','T','Q','Q','S','S','D'].map(x=>`<i>${x}</i>`).join('')}${cells}</div><div class="r2" style="margin-top:8px;font-size:12px;color:var(--mut)">${cnt} ${cnt===1?'treino':'treinos'} no mês · cor = como se sentiu: <span class="dot hi"></span> forte <span class="dot mid"></span> normal <span class="dot low"></span> cansado</div></div>`}
 function rHistorico(){
- if(!sessions.length)return `<div class="empty">Nenhum treino finalizado ainda.</div>`+rAjustes()+rBackup();
+ if(!sessions.length)return `<div class="empty">Nenhum treino finalizado ainda.</div>`+rBanco()+rAjustes()+rBackup();
  return rCal()+sessions.slice(0,60).map(s=>{const dn=DAYS.find(d=>d[0]===s.day);const open=ui.open===s.id;const fl=feelOf(s);
   return `<div class="card" data-sess="${s.id}"><div class="row" style="padding:0;border:0" data-act="hopen" data-k="${s.id}"><div><div class="r1">${dn?dn[2]:''} · ${fmtD(s.date)}${fl?' '+fl[1]:''}</div><div class="r2">${esc(s.dayName||'')} · ${s.ex.length} exercícios${s.dur?' · '+s.dur+' min':''}${fl?' · '+fl[2]:''}</div></div><span class="r2">${open?'▲':'▼'}</span></div>`+
-  (open?`<div style="margin-top:12px"><div class="feelq">Como você se sentiu?</div>${feelRow(s)}${s.ex.map(e=>`<div class="sumx"><b>${esc(e.name)}</b><div class="r2" style="color:var(--mut)">${esc(summarize(e.sets,e.unit))}</div></div>`).join('')}<button class="link danger" data-act="hdel" data-k="${s.id}">Apagar este treino</button></div>`:'')+`</div>`}).join('')+rAjustes()+rBackup();
+  (open?`<div style="margin-top:12px"><div class="feelq">Como você se sentiu?</div>${feelRow(s)}${s.ex.map(e=>`<div class="sumx"><b>${esc(e.name)}</b><div class="r2" style="color:var(--mut)">${esc(summarize(e.sets,e.unit))}</div></div>`).join('')}<button class="link danger" data-act="hdel" data-k="${s.id}">Apagar este treino</button></div>`:'')+`</div>`}).join('')+rBanco()+rAjustes()+rBackup();
 }
 
 // ---------- Modal ----------
@@ -823,7 +869,7 @@ const A={
  },
  addset:t=>{const id=t.dataset.ex;const dr=getDraft(ui.day);const ex=dayEx(ui.day).find(e=>e.id===id);const vals=dr.vals[id]||(dr.vals[id]=[]);const n=Math.max(ex.sets,vals.length);while(vals.length<n+1)vals.push({});saveDrafts();const y=window.scrollY;render();window.scrollTo(0,y)},
  start:()=>{getDraft(ui.day).startedAt=Date.now();saveDrafts();unlockAudio();syncAwake();const y=window.scrollY;render();window.scrollTo(0,y)},
- feel:t=>{const s=sessions.find(x=>x.id===t.dataset.s);if(!s)return;const k=+t.dataset.k;s.feel=s.feel===k?null:k;cache();Cloud.w(s.id,s);
+ feel:t=>{const s=sessions.find(x=>x.id===t.dataset.s);if(!s)return;const k=+t.dataset.k;s.feel=s.feel===k?null:k;s.u=Date.now();cache();Cloud.w(s.id,s);
   const inSheet=!!t.closest('#sheet');if(inSheet)t.parentElement.querySelectorAll('button').forEach(b=>b.classList.toggle('on',+b.dataset.k===s.feel));
   const y=window.scrollY;render();window.scrollTo(0,y)},
  discard:()=>confirmBox('Descartar o treino em andamento?',()=>{delete drafts[ui.day];saveDrafts();syncAwake();render()}),
@@ -835,8 +881,9 @@ const A={
   applySwap({id,name,unit:$('#swapunit').value,p:orig.p,s:orig.s,ref:[]})},
  swapundo:t=>{const dr=getDraft(ui.day);const s=dr.swaps&&dr.swaps[t.dataset.k];if(!s)return;delete dr.vals[s.id];delete dr.swaps[t.dataset.k];saveDrafts();const y=window.scrollY;render();window.scrollTo(0,y)},
  note:t=>rNote(t.dataset.k),
- notesave:()=>{const v=$('#notein').value.trim();if(v)notes[ui.note]=v;else delete notes[ui.note];saveNotes();closeModal();const y=window.scrollY;render();window.scrollTo(0,y)},
+ notesave:()=>{const v=$('#notein').value.trim();const nu=LS.get('notes_u',{});if(v){notes[ui.note]=v;nu[ui.note]=Date.now();unmarkDel('n',ui.note)}else if(ui.note in notes){delete notes[ui.note];delete nu[ui.note];markDel('n',ui.note)}LS.set('notes_u',nu);saveNotes();closeModal();const y=window.scrollY;render();window.scrollTo(0,y)},
  game:()=>modal(rGame()),
+ syncnow:()=>{if(!Sync.on()){toast('Preencha o endereço e o token');return}toast('Sincronizando…');Sync.run(true)},
  recap:()=>{const r=weekRecap();if(r)modal(rRecap(r))},
  calprev:()=>{ui.calM--;render()},
  calnext:()=>{if(ui.calM<0)ui.calM++;render()},
@@ -854,7 +901,7 @@ const A={
    const sets=validSets(vals,e.unit);if(sets.length){prev[e.id]=history(e.id);ex.push({id:e.id,name:e.name,unit:e.unit,reps:e.reps,p:e.p,s:e.s,c:!!e.c,sets})}});
   if(!ex.length){toast('Marque pelo menos uma série com ✓');return}
   const now=new Date();const dur=dr.startedAt?Math.max(1,Math.round((Date.now()-dr.startedAt)/60000)):null;
-  const s={id:'s_'+Date.now(),ts:now.toISOString(),date:dstr(now),day:ui.day,dayName:d.name,dur:dur&&dur<240?dur:null,ex};
+  const s={id:'s_'+Date.now(),u:Date.now(),ts:now.toISOString(),date:dstr(now),day:ui.day,dayName:d.name,dur:dur&&dur<240?dur:null,ex};
   const xb=xpReport();sessions.unshift(s);sortS();cache();const xa=xpReport(),gx=xa.total-xb.total,ps=xa.per[s.id];Cloud.w(s.id,s);delete drafts[ui.day];saveDrafts();syncAwake();
   $('#timer').classList.remove('show');clearInterval(timer.iv);
   let vol=sessVol(s);
@@ -876,9 +923,9 @@ const A={
  esave:()=>{ebuf.ex.forEach(x=>{x.sets=Math.max(1,Math.min(10,parseInt(x.sets)||1));x.name=x.name.trim()||'Exercício';fixReps(x)});plan.days[ui.day]=ebuf;ebuf=null;savePlan();closeModal();render();toast('Treino atualizado')},
  close:()=>closeModal(),
  cfm:()=>{const f=confirmBox.ok;closeModal();f&&f()},
- bwsave:()=>{const v=num($('#bwin').value);if(v==null||v<30||v>250){toast('Peso inválido');return}const d=todayStr();bw=bw.filter(x=>x.date!==d);bw.push({date:d,kg:v});bw.sort((a,b)=>a.date<b.date?-1:1);saveBW();render();toast('Peso salvo')},
- bwdel:t=>{const d=t.dataset.k;confirmBox(`Apagar o peso de ${fmtD(d)}?`,()=>{bw=bw.filter(x=>x.date!==d);saveBW();render()})},
- hdel:t=>{const id=t.dataset.k;confirmBox('Apagar este treino?',()=>{sessions=sessions.filter(s=>s.id!==id);cache();Cloud.w(id,null);render()})},
+ bwsave:()=>{const v=num($('#bwin').value);if(v==null||v<30||v>250){toast('Peso inválido');return}const d=todayStr();bw=bw.filter(x=>x.date!==d);bw.push({date:d,kg:v,u:Date.now()});unmarkDel('bw',d);bw.sort((a,b)=>a.date<b.date?-1:1);saveBW();render();toast('Peso salvo')},
+ bwdel:t=>{const d=t.dataset.k;confirmBox(`Apagar o peso de ${fmtD(d)}?`,()=>{bw=bw.filter(x=>x.date!==d);markDel('bw',d);saveBW();render()})},
+ hdel:t=>{const id=t.dataset.k;confirmBox('Apagar este treino?',()=>{sessions=sessions.filter(s=>s.id!==id);markDel('s',id);cache();Cloud.w(id,null);render()})},
  bexport:async()=>{
   const data=JSON.stringify({app:'treino',v:1,exportedAt:new Date().toISOString(),plan,sessions,bw,notes},null,1);
   const name='treino-backup-'+todayStr()+'.json';const file=new File([data],name,{type:'application/json'});
@@ -905,6 +952,7 @@ document.addEventListener('change',e=>{
 });
 document.addEventListener('input',e=>{
  const t=e.target;
+ if(t.dataset.cfgtxt){cfg[t.dataset.cfgtxt]=t.value.trim();LS.set('cfg_v1',cfg);return}
  if(t.dataset.cfg){const v=num(t.value);if(v!=null&&v>0){cfg[t.dataset.cfg]=v;LS.set('cfg_v1',cfg)}return}
  if(t.classList.contains('in')){const dr=getDraft(ui.day);const vals=dr.vals[t.dataset.ex]||(dr.vals[t.dataset.ex]=[]);const i=+t.dataset.i;const v=vals[i]||(vals[i]={});v[t.dataset.f]=num(t.value);clearTimeout(saveDrafts._t);saveDrafts._t=setTimeout(saveDrafts,400);return}
  if(t.dataset.ek&&t.tagName!=='SELECT')editField(t);
@@ -917,8 +965,10 @@ render();
 if(planUpgraded)toast('Treino novo carregado');
 {const wk=wkOf(todayStr());if(LS.get('recap_seen','')!==wk){const r=weekRecap();if(r)modal(rRecap(r));LS.set('recap_seen',wk)}}
 syncAwake();
+Sync.run();
+window.addEventListener('online',()=>Sync.run());
 setInterval(updClock,15000);
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState!=='visible')return;if(dropOldSwaps())render();updClock();syncAwake()});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState!=='visible')return;if(dropOldSwaps())render();updClock();syncAwake();Sync.run()});
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});
 </script>

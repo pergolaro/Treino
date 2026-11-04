@@ -130,6 +130,19 @@ svg.chart{width:100%;height:auto;display:block}
 .warm.prt{color:var(--acc);font-weight:650}
 .shortbtn{color:var(--acc);font-size:13px;padding:0}
 .shortbtn.on{font-weight:800}
+.calhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.calhead button{width:34px;height:30px;border-radius:9px;background:var(--card2);font-size:18px}
+.calhead button:disabled{opacity:.3}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;text-align:center}
+.cal i{font-style:normal;font-size:11px;color:var(--mut)}
+.cal span{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:9px;font-size:13px;color:var(--mut);background:var(--card2)}
+.cal span:empty{background:none}
+.cal span.today{outline:1.5px solid var(--acc)}
+.cal span.done{background:var(--accd);color:var(--acc);font-weight:700}
+.cal span.hi,.dot.hi{background:var(--grad);color:#fff;font-weight:700}
+.cal span.mid,.dot.mid{background:#4a4f5c;color:#fff}
+.cal span.low,.dot.low{background:#7a3b46;color:#fff}
+.dot{display:inline-block;width:9px;height:9px;border-radius:3px;vertical-align:-1px;margin-left:4px}
 .game{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px 12px;margin:6px 0 10px}
 .rank{width:42px;height:42px;flex:none;border-radius:12px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:21px}
 .ach{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
@@ -260,7 +273,7 @@ let bw=LS.get('bw_v1',[]);
 let drafts=LS.get('drafts_v1',{});
 let notes=LS.get('notes_v1',{});
 const wd=new Date().getDay();
-let ui={tab:'treino',day:['seg','seg','ter','qua','qui','sex','seg'][wd],mus:'last',evoEx:null,evoM:'top',open:null,openEx:new Set()};
+let ui={calM:0,tab:'treino',day:['seg','seg','ter','qua','qui','sex','seg'][wd],mus:'last',evoEx:null,evoM:'top',open:null,openEx:new Set()};
 const sortS=()=>sessions.sort((a,b)=>b.ts<a.ts?-1:1);
 sortS();
 function cache(){LS.set('plan_v1',plan);LS.set('sessions_v1',sessions);LS.set('bw_v1',bw)}
@@ -400,8 +413,8 @@ function maxOf(ex){const n=ex.name;
 const atMax=(ex,e)=>{const m=maxOf(ex);return m!=null&&validSets(e.sets,e.unit).some(s=>(s.w||0)>=m)};
 const capped=(ex,last)=>!!last&&atMax(ex,last.e)&&(overTop(last.e,ex.reps)||hitTop(last.e,ex.reps));
 function badge(ex,last){if(capped(ex,last))return '<span class="up">🔒 no máximo</span>';
- if(overTop(last.e,ex.reps))return '<span class="up warn">⚠ variar estímulo</span>';
- return hitTop(last.e,ex.reps)?'<span class="up">↑ subir carga</span>':''}
+ if(overTop(last.e,ex.reps)){const nw=ph(ex,last,0).w;return `<span class="up warn">⚠ variar estímulo${nw!=null?' · '+fmtN(nw):''}</span>`}
+ if(!hitTop(last.e,ex.reps))return '';const nw=ph(ex,last,0).w;return `<span class="up">↑ subir carga${nw!=null?' · '+fmtN(nw):''}</span>`}
 
 // ---------- Aquecimento e barra ----------
 const stepOf=ex=>ex.unit==='placas'?1:/cross|polia/i.test(ex.name)?5:ex.unit==='kglado'?2.5:2;
@@ -418,10 +431,11 @@ function extraLine(ex,last){const out=[];const u=UNITS[ex.unit]||UNITS.kg;const 
 
 // ---------- Alvo de recorde ----------
 const e1=(w,r)=>w*(1+Math.min(r,15)/30);
+const repLo=r=>+(String(r).match(/^(\d+)/)||[0,1])[1];
 function prTarget(ex){if(ex.unit==='cardio')return null;const H=history(ex.id);if(!H.length)return null;
  if(ex.unit==='corpo')return (Math.max(...H.map(x=>metric(x.e.sets,x.e.unit,'top')))+1)+' reps';
  const best=Math.max(...H.map(x=>metric(x.e.sets,x.e.unit,'e1rm')));const L=validSets(H[H.length-1].e.sets,H[H.length-1].e.unit);const w0=Math.max(0,...L.map(s=>s.w||0));if(!w0)return null;
- const st=stepOf(ex),top=topReps(ex.reps)||10,lo=+(String(ex.reps).match(/^(\d+)/)||[0,1])[1],mx=maxOf(ex),opts=[];
+ const st=stepOf(ex),top=topReps(ex.reps)||10,lo=repLo(ex.reps),mx=maxOf(ex),opts=[];
  // Só sugere recorde dentro da faixa do exercício
  for(const w of [w0,w0+st,w0+2*st]){if(mx!=null&&w>mx)break;let r=1;while(r<=15&&e1(w,r)<=best+1e-9)r++;r=Math.max(r,lo);if(r<=top&&!opts.some(o=>o[1]===r))opts.push([w,r]);if(opts.length===2)break}
  return opts.length?opts.map(([w,r])=>fmtN(w)+'×'+r).join(' ou '):null}
@@ -461,13 +475,14 @@ function weekMissions(w){let x=0;for(const ch of w)x=(Math.imul(x,31)+ch.charCod
  while(idx.length<3){x=(Math.imul(x,1103515245)+12345)>>>0;const i=(x>>>16)%MISSIONS.length;if(!idx.includes(i))idx.push(i)}return idx.map(i=>MISSIONS[i])}
 
 // ---------- Modo game ----------
+function levelOf(total,base,inc){let lvl=1,into=total,need=base;while(lvl<MAX_LVL&&into>=need){into-=need;lvl++;need=base+inc*(lvl-1)}return {lvl,into,need}}
 // Tudo sai do histórico: apagar ou importar treinos recalcula XP, nível e conquistas.
 const RANKS=[['⚙️','Ferro'],['🥉','Bronze'],['🥈','Prata'],['🥇','Ouro'],['💠','Platina'],['💎','Diamante'],['⚡','Ascendente'],['👑','Imortal'],['☀️','Radiante']];
 const MAX_LVL=25;
 const rankOf=l=>{const t=Math.min(8,Math.floor((l-1)/3));return [RANKS[t][0],RANKS[t][1]+(t<8?' '+((l-1)%3+1):'')]};
 const fmtInt=n=>Math.round(n).toLocaleString('pt-BR');
-function xpReport(){
- const list=sessions.slice().sort((a,b)=>a.ts<b.ts?-1:1);const best={},bestW={},per={},weeks={};
+function xpReport(src=sessions){
+ const list=src.slice().sort((a,b)=>a.ts<b.ts?-1:1);const best={},bestW={},per={},weeks={};
  let total=0,prsAll=0,fast=0,legs=0,grit=0;
  list.forEach(s=>{let x=0,prs=0;
   let prc=0;s.ex.forEach(e=>{const S=validSets(e.sets,e.unit);if(!S.length)return;
@@ -488,7 +503,7 @@ function xpReport(){
  const cur=wkOf(todayStr());let streak=(weeks[cur]?.days.size||0)>=4?1:0;const d=new Date(cur+'T12:00:00');
  for(;;){d.setDate(d.getDate()-7);if((weeks[dstr(d)]?.days.size||0)>=4)streak++;else break}
  const cw=weeks[cur],cst=cw?statOf(cw):null;const missions=weekMissions(cur).map(m=>({id:m[0],label:m[1],xp:m[2],done:!!cst&&m[3](cst)}));
- let lvl=1,into=total,need=800;while(lvl<MAX_LVL&&into>=need){into-=need;lvl++;need=800+250*(lvl-1)}
+ const {lvl,into,need}=levelOf(total,800,250);
  return {total,per,lvl,into,need,streak,bestRun,perfect,prsAll,fast,legs,grit,lateral,vfull,missions,missionsDone,best:bestW,count:list.length,weekDays:weeks[cur]?weeks[cur].days.size:0}}
 const ACH=[
  ['🏁','Primeiro treino','Finalize 1 treino',r=>r.count>=1],
@@ -512,11 +527,37 @@ const ACH=[
 // Marcos de força: carga total na barra (kg/lado × 2 + barra)
 const barTot=(r,id)=>r.best[id]?r.best[id]*2+cfg.barra:0;
 const lastBW=()=>bw.length?bw.slice().sort((a,b)=>a.date<b.date?-1:1).pop().kg:null;
+// ---------- Temporadas ----------
+// Uma temporada por trimestre, com rank próprio que zera; o rank total continua.
+const seasonOf=ds=>{const [y,m]=ds.split('-').map(Number);return {key:y+'-'+Math.ceil(m/3),q:Math.ceil(m/3),y}};
+function seasonInfo(key){const r=xpReport(sessions.filter(s=>seasonOf(s.date).key===key));return {...levelOf(r.total,300,100),total:r.total,count:r.count}}
+function seasonEnd(){const n=new Date();return new Date(n.getFullYear(),Math.ceil((n.getMonth()+1)/3)*3,1)}
+function pastSeasons(){const cur=seasonOf(todayStr()).key;return [...new Set(sessions.map(s=>seasonOf(s.date).key))].filter(k=>k!==cur).sort().reverse()}
+
+// ---------- Resumo da semana ----------
+function weekRecap(){const ws=wkOf(todayStr());const d=new Date(ws+'T12:00:00');d.setDate(d.getDate()-7);const ps=dstr(d);
+ const before=sessions.filter(s=>s.date<ps),upto=sessions.filter(s=>s.date<ws),wk=upto.filter(s=>s.date>=ps);if(!wk.length)return null;
+ const a=xpReport(before),b=xpReport(upto);const prs=wk.reduce((x,s)=>x+(b.per[s.id]?b.per[s.id].prs:0),0);
+ const days=new Set(wk.map(s=>s.day)).size,ms=weekMissionsDone(ps,wk,b);const end=new Date(d);end.setDate(end.getDate()+6);
+ return {ps,from:fmtD(ps),to:fmtD(dstr(end)),days,prs,xp:b.total-a.total,v:vScore(primaryCount(wk)),ms,lvlA:a.lvl,lvlB:b.lvl}}
+function weekMissionsDone(w,list,rep){const st={c:primaryCount(list),prs:list.reduce((a,s)=>a+rep.per[s.id].prs,0),prc:list.reduce((a,s)=>a+rep.per[s.id].prc,0),quick:list.filter(s=>rep.per[s.id].quick).length,legs:list.filter(s=>s.ex.some(e=>e.id==='leg_press')).length,feel:list.filter(s=>s.feel).length};
+ return weekMissions(w).map(m=>({label:m[1],xp:m[2],done:m[3](st)}))}
+function rRecap(r){const ra=rankOf(r.lvlA).join(' '),rb=rankOf(r.lvlB).join(' ');
+ return `<h3>Resumo da semana</h3><div class="exm" style="margin:-6px 0 12px">${r.from} a ${r.to}</div>`+
+ `<div class="stats"><div class="stat"><div class="v">${r.days}/5</div><div class="k">treinos</div></div><div class="stat"><div class="v">${r.prs}</div><div class="k">recordes</div></div><div class="stat"><div class="v">+${fmtInt(r.xp)}</div><div class="k">XP</div></div></div>`+
+ `<div class="xpbox">${r.lvlB>r.lvlA?`⬆ Subiu de <b>${ra}</b> para <b>${rb}</b>`:`Rank: <b>${rb}</b>`} · Placar do shape em V: <b>${r.v}%</b></div>`+
+ `<div class="h2">Missões</div><div class="card">${r.ms.map(m=>`<div class="row"><span class="r1">${m.done?'✅':'❌'} ${m.label}</span><span class="r2">${m.done?'+'+m.xp+' XP':''}</span></div>`).join('')}</div>`+
+ `<button class="primary" style="width:100%;margin-top:4px" data-act="close">Bora pra semana</button>`}
+
 function rGameChip(){const r=xpReport();const [emo,name]=rankOf(r.lvl);const pct=r.lvl>=MAX_LVL?100:r.into/r.need*100;
  return `<div class="game" data-act="game"><span class="rank">${emo}</span><div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between;font-size:14px"><b>${name}</b><span class="r2">${fmtInt(r.total)} XP</span></div><div class="bar"><i style="width:${pct}%"></i></div><div class="r2" style="margin-top:4px">Semana ${r.weekDays}/5 · 🎯 ${r.missions.filter(m=>m.done).length}/3${r.streak?` · 🔥 ${r.streak} ${r.streak===1?'semana':'semanas'} seguidas`:''}</div></div><span class="r2">›</span></div>`}
 function rGame(){const r=xpReport();const [emo,name]=rankOf(r.lvl);const nx=r.lvl<MAX_LVL?rankOf(r.lvl+1).join(' '):null;const got=ACH.filter(a=>a[3](r)).length;
  return `<h3>${emo} ${name}</h3><div class="bar" style="height:10px"><i style="width:${r.lvl>=MAX_LVL?100:r.into/r.need*100}%"></i></div><div class="exm" style="margin:6px 0 12px">${nx?`Faltam ${fmtInt(r.need-r.into)} XP para ${nx}`:'Rank máximo'} · ${fmtInt(r.total)} XP no total</div>`+
  `<div class="stats"><div class="stat"><div class="v">${r.count}</div><div class="k">treinos</div></div><div class="stat"><div class="v">${r.prsAll}</div><div class="k">recordes</div></div><div class="stat"><div class="v">${r.streak}</div><div class="k">semanas seguidas</div></div></div>`+
+ `<div class="h2">Temporada ${seasonOf(todayStr()).q} · ${seasonOf(todayStr()).y}</div><div class="card">${(()=>{const si=seasonInfo(seasonOf(todayStr()).key);const [e,n]=rankOf(si.lvl);const left=Math.ceil((seasonEnd()-Date.now())/864e5);
+  return `<div style="display:flex;align-items:center;gap:12px"><span class="rank">${e}</span><div style="flex:1"><div style="display:flex;justify-content:space-between"><b>${n}</b><span class="r2">${fmtInt(si.total)} XP</span></div><div class="bar"><i style="width:${si.lvl>=MAX_LVL?100:si.into/si.need*100}%"></i></div><div class="r2" style="margin-top:4px;font-size:12px;color:var(--mut)">Termina em ${left} ${left===1?'dia':'dias'} · o rank da temporada zera, o total continua</div></div></div>`+
+  (pastSeasons().length?`<div class="r2" style="margin-top:10px;font-size:12px;color:var(--mut)">Temporadas anteriores: ${pastSeasons().map(k=>{const s=seasonInfo(k);const [e,n]=rankOf(s.lvl);const [y,q]=k.split('-');return `${e} ${n} (T${q}/${y})`}).join(' · ')}</div>`:'')})()}</div>`+
+ (weekRecap()?`<button class="ghost" style="width:100%;padding:12px;margin-bottom:4px" data-act="recap">Resumo da semana passada</button>`:'')+
  `<div class="h2">Missões da semana</div><div class="card">${r.missions.map(m=>`<div class="row"><span class="r1" style="${m.done?'color:var(--acc)':''}">${m.done?'✅':'🎯'} ${m.label}</span><span class="r2">+${m.xp} XP</span></div>`).join('')}</div>`+
  `<div class="h2">Conquistas · ${got}/${ACH.length}</div><div class="ach">${ACH.map(([e,l,d,f])=>`<div class="${f(r)?'':'off'}"><span>${e}</span><b>${l}</b><small>${d}</small></div>`).join('')}</div>`+
  `<div class="h2">Como ganhar XP</div><div class="card" style="font-size:14px;color:var(--mut);line-height:1.6">Série de composto +15 · isolador +10 · abdômen +5<br>Treino finalizado +50 · em até ${LIMIT_MIN} min +20<br>Recorde +50 por exercício<br>Semana com 4 treinos +100 · com 5 treinos +200<br>Missões da semana +50 a +150 cada<br>A sequência conta semanas seguidas com 4 ou mais treinos.</div><button class="primary" style="width:100%;margin-top:4px" data-act="close">Bora treinar</button>`}
@@ -561,7 +602,10 @@ function rTreino(){
  return h;
 }
 function ph(ex,last,i){
- if(last){const S=validSets(last.e.sets,last.e.unit);const s=S[Math.min(i,S.length-1)];return {w:s.w,r:s.r}}
+ if(last){const S=validSets(last.e.sets,last.e.unit);const s=S[Math.min(i,S.length-1)];
+  // Bateu o topo da faixa: a sugestão já vem com o próximo passo de carga e a base da faixa
+  if(s.w!=null&&(UNITS[ex.unit]||{}).w&&ex.unit!=='cardio'&&(hitTop(last.e,ex.reps)||overTop(last.e,ex.reps))&&!capped(ex,last)){const mx=maxOf(ex);const w=s.w+stepOf(ex);return {w:mx!=null?Math.min(w,mx):w,r:repLo(ex.reps)}}
+  return {w:s.w,r:s.r}}
  const ref=ex.ref||[];return {w:ref.length?ref[Math.min(i,ref.length-1)]:null,r:topReps(ex.reps)}
 }
 function exCard(ex,dr){
@@ -700,10 +744,18 @@ function sessVol(s){return s.ex.reduce((a,e)=>a+(['kg','kglado','placas'].includ
 function rBackup(){const ago=backupAgo();return `<div class="h2">Backup</div><div class="card"><div class="exm" style="margin-bottom:10px">Seus treinos ficam salvos no celular. Faça um backup de vez em quando (salve no Arquivos ou no iCloud) pra não perder nada se trocar de aparelho.<br><b>${ago?'Último backup: '+ago:'Nenhum backup feito ainda'}</b></div><div class="mrow" style="margin-top:0"><button class="ghost" style="padding:12px" data-act="bimport">Importar</button><button class="primary" data-act="bexport">Exportar backup</button></div><input type="file" id="bfile" accept="application/json,.json" style="display:none"></div>`}
 function rAjustes(){const f=(k,l)=>`<label>${l}<input inputmode="decimal" data-cfg="${k}" value="${fmtN(cfg[k])}"></label>`;
  return `<div class="h2">Aparelhos da academia</div><div class="card"><div class="exm" style="margin-bottom:10px">O app usa esses limites para saber quando você chegou no máximo e sugerir outro jeito de progredir.</div><div class="erow">${f('pulley','Placas do pulley')}${f('cross','Polia do cross (kg)')}</div><div class="erow">${f('halter','Halter mais pesado (kg)')}${f('barra','Barra (kg)')}</div></div>`}
+function rCal(){const n=new Date();const base=new Date(n.getFullYear(),n.getMonth()+ui.calM,1);const y=base.getFullYear(),m=base.getMonth();
+ const days=new Date(y,m+1,0).getDate(),lead=(base.getDay()+6)%7;const by={};sessions.forEach(s=>{(by[s.date]=by[s.date]||[]).push(s)});
+ const MES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+ let cells='';for(let i=0;i<lead;i++)cells+='<span></span>';
+ for(let d=1;d<=days;d++){const ds=y+'-'+pad(m+1)+'-'+pad(d);const ss=by[ds];const f=ss&&ss.find(s=>s.feel)?.feel;
+  const cls=!ss?'':!f?'done':f<=2?'low':f===3?'mid':'hi';cells+=`<span class="${cls} ${ds===todayStr()?'today':''}" ${ss?`data-act="calday" data-k="${ss[0].id}"`:''}>${d}</span>`}
+ const cnt=Object.keys(by).filter(k=>k.startsWith(y+'-'+pad(m+1))).length;
+ return `<div class="card"><div class="calhead"><button data-act="calprev">‹</button><b>${MES[m]} ${y}</b><button data-act="calnext" ${ui.calM>=0?'disabled':''}>›</button></div><div class="cal">${['S','T','Q','Q','S','S','D'].map(x=>`<i>${x}</i>`).join('')}${cells}</div><div class="r2" style="margin-top:8px;font-size:12px;color:var(--mut)">${cnt} ${cnt===1?'treino':'treinos'} no mês · cor = como se sentiu: <span class="dot hi"></span> forte <span class="dot mid"></span> normal <span class="dot low"></span> cansado</div></div>`}
 function rHistorico(){
  if(!sessions.length)return `<div class="empty">Nenhum treino finalizado ainda.</div>`+rAjustes()+rBackup();
- return sessions.slice(0,60).map(s=>{const dn=DAYS.find(d=>d[0]===s.day);const open=ui.open===s.id;const fl=feelOf(s);
-  return `<div class="card"><div class="row" style="padding:0;border:0" data-act="hopen" data-k="${s.id}"><div><div class="r1">${dn?dn[2]:''} · ${fmtD(s.date)}${fl?' '+fl[1]:''}</div><div class="r2">${esc(s.dayName||'')} · ${s.ex.length} exercícios${s.dur?' · '+s.dur+' min':''}${fl?' · '+fl[2]:''}</div></div><span class="r2">${open?'▲':'▼'}</span></div>`+
+ return rCal()+sessions.slice(0,60).map(s=>{const dn=DAYS.find(d=>d[0]===s.day);const open=ui.open===s.id;const fl=feelOf(s);
+  return `<div class="card" data-sess="${s.id}"><div class="row" style="padding:0;border:0" data-act="hopen" data-k="${s.id}"><div><div class="r1">${dn?dn[2]:''} · ${fmtD(s.date)}${fl?' '+fl[1]:''}</div><div class="r2">${esc(s.dayName||'')} · ${s.ex.length} exercícios${s.dur?' · '+s.dur+' min':''}${fl?' · '+fl[2]:''}</div></div><span class="r2">${open?'▲':'▼'}</span></div>`+
   (open?`<div style="margin-top:12px"><div class="feelq">Como você se sentiu?</div>${feelRow(s)}${s.ex.map(e=>`<div class="sumx"><b>${esc(e.name)}</b><div class="r2" style="color:var(--mut)">${esc(summarize(e.sets,e.unit))}</div></div>`).join('')}<button class="link danger" data-act="hdel" data-k="${s.id}">Apagar este treino</button></div>`:'')+`</div>`}).join('')+rAjustes()+rBackup();
 }
 
@@ -782,6 +834,10 @@ const A={
  note:t=>rNote(t.dataset.k),
  notesave:()=>{const v=$('#notein').value.trim();if(v)notes[ui.note]=v;else delete notes[ui.note];saveNotes();closeModal();const y=window.scrollY;render();window.scrollTo(0,y)},
  game:()=>modal(rGame()),
+ recap:()=>{const r=weekRecap();if(r)modal(rRecap(r))},
+ calprev:()=>{ui.calM--;render()},
+ calnext:()=>{if(ui.calM<0)ui.calM++;render()},
+ calday:t=>{ui.open=t.dataset.k;render();const el=document.querySelector(`[data-sess="${t.dataset.k}"]`);if(el)el.scrollIntoView({behavior:'smooth',block:'center'})},
  short:()=>{const dr=getDraft(ui.day);dr.short=!dr.short;saveDrafts();const y=window.scrollY;render();window.scrollTo(0,y);toast(dr.short?'Treino curto: 1 série a menos nos isoladores':'Treino completo de novo')},
  deloadok:()=>{LS.set('deload_snooze',Date.now()+7*864e5);render()},
  squatlater:()=>{LS.set('squat_snooze',Date.now()+7*864e5);render()},
@@ -856,6 +912,7 @@ function editField(t){if(!ebuf)return;const k=t.dataset.ek;if(k==='dname'){ebuf.
 dropOldSwaps();
 render();
 if(planUpgraded)toast('Treino novo carregado');
+{const wk=wkOf(todayStr());if(LS.get('recap_seen','')!==wk){const r=weekRecap();if(r)modal(rRecap(r));LS.set('recap_seen',wk)}}
 syncAwake();
 setInterval(updClock,15000);
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState!=='visible')return;if(dropOldSwaps())render();updClock();syncAwake()});

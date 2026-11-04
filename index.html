@@ -180,72 +180,73 @@ function E(id,name,sets,reps,unit,p,s,ref){return {id,name,sets,reps,unit,p,s:s|
 const C=e=>(e.c=true,e);
 const BS=(e,g)=>(e.bs=g,e);
 const B=e=>(e.bar=true,e);
-// Faixas permitidas: compostos 6-8 ou 8-10, isoladores até 12-15, abdômen 15-20
-const REPS=['6-8','8-10','8-12','10-12','10-15','12-15','15-20'];
+// Faixas permitidas: com carga só 6-8 ou 8-10; abdômen de peso corporal 15-20
+const repsFor=u=>u==='corpo'?['15-20','8-10','6-8']:['6-8','8-10'];
+const fixReps=e=>{if(e.unit!=='cardio'&&!repsFor(e.unit).includes(e.reps))e.reps=e.unit==='corpo'?'15-20':'8-10'};
 // v2: shape em V — ombro lateral, costas largas e densas, braços; sem stiff, desenvolvimento e esteira
-const DEFAULT_PLAN={v:3,days:{
+const DEFAULT_PLAN={v:4,days:{
  seg:{name:'Peito + Ombro lateral + Tríceps',ex:[
   B(C(E('supino_reto','Supino reto (barra)',3,'6-8','kglado',['peito'],['ombro_frontal','triceps'],[40,45,45]))),
   B(C(E('supino_incl_barra','Supino inclinado (barra)',3,'8-10','kglado',['peito'],['ombro_frontal','triceps'],[30,35,35]))),
-  E('elev_lateral','Elevação lateral (halteres)',4,'8-12','kg',['ombro_lateral'],['trapezio'],[14]),
+  E('elev_lateral','Elevação lateral (halteres)',4,'8-10','kg',['ombro_lateral'],['trapezio'],[14]),
   E('triceps_polia_w','Tríceps na polia (barra W)',3,'8-10','kg',['triceps'],[],[100]),
-  E('frances_corda','Tríceps francês na polia (corda)',3,'8-12','kg',['triceps'],[],[80])]},
+  E('frances_corda','Tríceps francês na polia (corda)',3,'8-10','kg',['triceps'],[],[80])]},
  ter:{name:'Costas + Bíceps',ex:[
   B(C(E('remada_curvada','Remada curvada (barra)',3,'6-8','kglado',['costas'],['ombro_posterior','biceps','lombar'],[25,25,25]))),
   C(E('puxada_aberta','Puxada aberta no pulley',3,'8-10','placas',['costas'],['biceps'],[15])),
   C(E('remada_uni','Remada serrote (halter)',3,'8-10','kg',['costas'],['biceps','ombro_posterior'])),
-  E('pulldown_corda','Pulldown com corda (cross)',2,'10-12','kg',['costas'],[],[80]),
+  E('pulldown_corda','Pulldown com corda (cross)',2,'8-10','kg',['costas'],[],[80]),
   E('rosca_direta_polia','Rosca direta na polia (barra W)',3,'8-10','kg',['biceps'],['antebraco'],[70]),
-  E('rosca_inclinada','Rosca inclinada (halteres)',3,'8-12','kg',['biceps'])]},
+  E('rosca_inclinada','Rosca inclinada (halteres)',3,'8-10','kg',['biceps'])]},
  qua:{name:'Pernas + Abdômen',ex:[
   C(E('leg_press','Leg press',4,'6-8','kg',['quadriceps'],['gluteos'])),
-  E('extensora','Cadeira extensora',3,'10-12','kg',['quadriceps']),
-  E('mesa_flexora','Mesa flexora',3,'8-12','kg',['posterior_coxa']),
-  B(E('elevacao_pelvica','Elevação pélvica (barra)',2,'8-12','kglado',['gluteos'],['posterior_coxa'])),
-  E('panturrilha_lp','Panturrilha no leg press',3,'10-15','kg',['panturrilha']),
+  E('extensora','Cadeira extensora',3,'8-10','kg',['quadriceps']),
+  E('mesa_flexora','Mesa flexora',3,'8-10','kg',['posterior_coxa']),
+  B(E('elevacao_pelvica','Elevação pélvica (barra)',2,'8-10','kglado',['gluteos'],['posterior_coxa'])),
+  E('panturrilha_lp','Panturrilha no leg press',3,'8-10','kg',['panturrilha']),
   E('abd_supra','Abdominal supra (pernas elevadas)',3,'15-20','corpo',['abdomen'])]},
  qui:{name:'Peito + Costas',ex:[
   C(E('supino_incl_halter','Supino inclinado (halteres)',3,'8-10','kg',['peito'],['ombro_frontal','triceps'])),
   C(E('puxada_triangulo','Puxada com triângulo no pulley',3,'8-10','placas',['costas'],['biceps'])),
-  E('crossover','Crossover polia alta',3,'10-12','kglado',['peito'],[],[50]),
+  E('crossover','Crossover polia alta',3,'8-10','kglado',['peito'],[],[50]),
   C(E('remada_baixa_cross','Remada baixa no cross (triângulo)',3,'8-10','kg',['costas'],['biceps','ombro_posterior'])),
-  E('cross_baixo','Crossover polia baixa',2,'12-15','kglado',['peito'])]},
+  E('cross_baixo','Crossover polia baixa',2,'8-10','kglado',['peito'])]},
  sex:{name:'Ombros + Braços + Abdômen',ex:[
-  E('elev_lat_cross','Elevação lateral unilateral no cross',4,'10-12','kg',['ombro_lateral']),
-  E('posterior_cross','Posterior de ombro no cross',4,'12-15','placas',['ombro_posterior'],['trapezio'],[4]),
+  E('elev_lat_cross','Elevação lateral unilateral no cross',4,'8-10','kg',['ombro_lateral']),
+  E('posterior_cross','Posterior de ombro no cross',4,'8-10','placas',['ombro_posterior'],['trapezio'],[4]),
   BS(E('rosca_martelo','Rosca martelo (halteres)',3,'8-10','kg',['biceps'],['antebraco'],[20]),'b1'),
   BS(E('triceps_corda','Tríceps na polia (corda)',3,'8-10','kg',['triceps']),'b1'),
-  E('rosca_inversa','Rosca inversa na polia',2,'10-12','kg',['antebraco'],['biceps']),
+  E('rosca_inversa','Rosca inversa na polia',2,'8-10','kg',['antebraco'],['biceps']),
   E('abd_vup','Abdominal canivete (V-up)',3,'15-20','corpo',['abdomen'])]}
 }};
 // Alternativas para a troca do dia, só com o que tem na academia
 const CATALOG=[
  C(E('alt_supino_halter','Supino reto (halteres)',3,'8-10','kg',['peito'],['ombro_frontal','triceps'])),
- E('alt_crucifixo','Crucifixo (halteres)',3,'10-12','kg',['peito']),
+ E('alt_crucifixo','Crucifixo (halteres)',3,'8-10','kg',['peito']),
  B(C(E('desenv_militar','Desenvolvimento militar em pé',3,'6-8','kglado',['ombro_frontal'],['ombro_lateral','triceps'],[20]))),
  C(E('arnold','Arnold press (halteres)',3,'8-10','kg',['ombro_frontal'],['ombro_lateral','triceps'],[28])),
  C(E('alt_desenv_halter','Desenvolvimento (halteres)',3,'8-10','kg',['ombro_frontal'],['ombro_lateral','triceps'])),
- E('elev_lat_uni','Elevação lateral unilateral (halter)',3,'10-12','kg',['ombro_lateral']),
- E('alt_crucifixo_inv','Crucifixo inverso (halteres)',3,'12-15','kg',['ombro_posterior'],['trapezio']),
- B(E('encolhimento','Encolhimento (barra)',3,'8-12','kglado',['trapezio'],['antebraco'],[40,45,50])),
- E('alt_encolh_halter','Encolhimento (halteres)',3,'8-12','kg',['trapezio'],['antebraco']),
+ E('elev_lat_uni','Elevação lateral unilateral (halter)',3,'8-10','kg',['ombro_lateral']),
+ E('alt_crucifixo_inv','Crucifixo inverso (halteres)',3,'8-10','kg',['ombro_posterior'],['trapezio']),
+ B(E('encolhimento','Encolhimento (barra)',3,'8-10','kglado',['trapezio'],['antebraco'],[40,45,50])),
+ E('alt_encolh_halter','Encolhimento (halteres)',3,'8-10','kg',['trapezio'],['antebraco']),
  C(E('barra_fixa','Barra fixa aberta',3,'6-8','corpo',['costas'],['biceps','ombro_posterior'])),
  C(E('alt_remada_halter','Remada curvada (halteres)',3,'8-10','kg',['costas'],['ombro_posterior','biceps','lombar'])),
  E('rosca_alternada','Rosca alternada (halteres)',3,'8-10','kg',['biceps'],['antebraco']),
  E('alt_rosca_w','Rosca direta (barra W)',3,'8-10','kglado',['biceps'],['antebraco']),
- E('alt_rosca_corda','Rosca na polia com corda',3,'8-12','kg',['biceps'],['antebraco']),
+ E('alt_rosca_corda','Rosca na polia com corda',3,'8-10','kg',['biceps'],['antebraco']),
  E('alt_tri_testa','Tríceps testa (barra W)',3,'8-10','kglado',['triceps']),
- E('alt_tri_uni','Tríceps unilateral na polia',3,'10-12','kg',['triceps']),
+ E('alt_tri_uni','Tríceps unilateral na polia',3,'8-10','kg',['triceps']),
  C(E('alt_lp_uni','Leg press unilateral',3,'8-10','kg',['quadriceps'],['gluteos'])),
  B(C(E('stiff','Stiff (barra)',3,'8-10','kglado',['posterior_coxa'],['gluteos','lombar']))),
  B(C(E('agachamento_livre','Agachamento livre',3,'6-8','kglado',['quadriceps'],['gluteos','posterior_coxa']))),
  C(E('bulgaro','Agachamento búlgaro (halteres)',2,'8-10','kg',['quadriceps'],['gluteos'])),
- E('adutora','Cadeira adutora',3,'10-12','kg',['adutores']),
- E('abdutora','Cadeira abdutora',3,'10-12','kg',['gluteos']),
- E('alt_pant_uni','Panturrilha unilateral no leg press',3,'10-15','kg',['panturrilha']),
+ E('adutora','Cadeira adutora',3,'8-10','kg',['adutores']),
+ E('abdutora','Cadeira abdutora',3,'8-10','kg',['gluteos']),
+ E('alt_pant_uni','Panturrilha unilateral no leg press',3,'8-10','kg',['panturrilha']),
  E('abd_inout','Abdominal sentado (in & out)',3,'15-20','corpo',['abdomen']),
- E('alt_abd_barra','Elevação de pernas na barra fixa',3,'12-15','corpo',['abdomen']),
- E('alt_abd_polia','Abdominal na polia (corda)',3,'12-15','kg',['abdomen']),
+ E('alt_abd_barra','Elevação de pernas na barra fixa',3,'15-20','corpo',['abdomen']),
+ E('alt_abd_polia','Abdominal na polia (corda)',3,'8-10','kg',['abdomen']),
  E('esteira','Esteira',1,'15 min','cardio',['cardio'])];
 
 const $=s=>document.querySelector(s);
@@ -266,8 +267,10 @@ let plan=LS.get('plan_v1',null);
 // Plano salvo de uma versão anterior dá lugar ao padrão novo
 const planUpgraded=!!plan&&(plan.v||1)<2;
 if(!plan||planUpgraded){plan=clone(DEFAULT_PLAN);LS.set('plan_v1',plan)}
-else if(plan.v<DEFAULT_PLAN.v){// v3 só junta martelo e tríceps corda em bi-set, sem mexer no resto do plano
- (plan.days.sex.ex||[]).forEach(e=>{if(e.id==='rosca_martelo'||e.id==='triceps_corda')e.bs='b1'});plan.v=DEFAULT_PLAN.v;LS.set('plan_v1',plan)}
+else if(plan.v<DEFAULT_PLAN.v){// Ajustes sem apagar o que foi editado no celular
+ if(plan.v<3)(plan.days.sex.ex||[]).forEach(e=>{if(e.id==='rosca_martelo'||e.id==='triceps_corda')e.bs='b1'});// v3: bi-set na sexta
+ if(plan.v<4)DAYS.forEach(([k])=>(plan.days[k].ex||[]).forEach(fixReps));// v4: faixas só 6-8 ou 8-10
+ plan.v=DEFAULT_PLAN.v;LS.set('plan_v1',plan)}
 let sessions=LS.get('sessions_v1',[]);
 let bw=LS.get('bw_v1',[]);
 let drafts=LS.get('drafts_v1',{});
@@ -779,7 +782,7 @@ function rEdit(){
  const mo=v=>Object.entries(MUSCLES).map(([k,l])=>`<option value="${k}" ${k===v?'selected':''}>${l}</option>`).join('');
  modal(`<h3>Editar ${dn}</h3><label>Nome do dia<input data-ek="dname" value="${esc(ebuf.name)}"></label>`+
  ebuf.ex.map((x,i)=>`<div class="card" style="background:var(--card)"><label>Exercício<input data-ei="${i}" data-ek="name" value="${esc(x.name)}"></label>
-  <div class="erow"><label>Séries<input type="number" inputmode="numeric" data-ei="${i}" data-ek="sets" value="${x.sets}"></label><label>Reps${x.unit==='cardio'?`<input data-ei="${i}" data-ek="reps" value="${esc(x.reps)}">`:`<select data-ei="${i}" data-ek="reps">${REPS.map(r=>`<option ${r===x.reps?'selected':''}>${r}</option>`).join('')}</select>`}</label><label>Unidade<select data-ei="${i}" data-ek="unit">${uo(x.unit)}</select></label></div>
+  <div class="erow"><label>Séries<input type="number" inputmode="numeric" data-ei="${i}" data-ek="sets" value="${x.sets}"></label><label>Reps${x.unit==='cardio'?`<input data-ei="${i}" data-ek="reps" value="${esc(x.reps)}">`:`<select data-ei="${i}" data-ek="reps">${repsFor(x.unit).map(r=>`<option ${r===x.reps?'selected':''}>${r}</option>`).join('')}</select>`}</label><label>Unidade<select data-ei="${i}" data-ek="unit">${uo(x.unit)}</select></label></div>
   <div class="erow"><label>Músculo principal<select data-ei="${i}" data-ek="p">${mo(x.p[0])}</select></label><div class="ebtns"><button data-act="eup" data-i="${i}">↑</button><button data-act="edown" data-i="${i}">↓</button><button class="danger" data-act="edel" data-i="${i}">✕</button></div></div></div>`).join('')+
  `<button class="ghost" style="width:100%;padding:12px" data-act="eadd">+ Adicionar exercício</button>
   <div class="mrow"><button class="ghost" data-act="ereset">Restaurar padrão</button><button class="primary" data-act="esave">Salvar</button></div>
@@ -870,7 +873,7 @@ const A={
  edel:t=>{ebuf.ex.splice(+t.dataset.i,1);rEdit()},
  eadd:()=>{ebuf.ex.push(E('x_'+Date.now().toString(36),'Novo exercício',3,'8-10','kg',['peito']));rEdit();const sh=$('#sheet');sh.scrollTop=sh.scrollHeight},
  ereset:()=>{ebuf=clone(DEFAULT_PLAN.days[ui.day]);rEdit()},
- esave:()=>{ebuf.ex.forEach(x=>{x.sets=Math.max(1,Math.min(10,parseInt(x.sets)||1));x.name=x.name.trim()||'Exercício';if(x.unit!=='cardio'&&!REPS.includes(x.reps))x.reps='8-10'});plan.days[ui.day]=ebuf;ebuf=null;savePlan();closeModal();render();toast('Treino atualizado')},
+ esave:()=>{ebuf.ex.forEach(x=>{x.sets=Math.max(1,Math.min(10,parseInt(x.sets)||1));x.name=x.name.trim()||'Exercício';fixReps(x)});plan.days[ui.day]=ebuf;ebuf=null;savePlan();closeModal();render();toast('Treino atualizado')},
  close:()=>closeModal(),
  cfm:()=>{const f=confirmBox.ok;closeModal();f&&f()},
  bwsave:()=>{const v=num($('#bwin').value);if(v==null||v<30||v>250){toast('Peso inválido');return}const d=todayStr();bw=bw.filter(x=>x.date!==d);bw.push({date:d,kg:v});bw.sort((a,b)=>a.date<b.date?-1:1);saveBW();render();toast('Peso salvo')},

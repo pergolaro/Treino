@@ -127,6 +127,9 @@ svg.chart{width:100%;height:auto;display:block}
 .swapof{font-size:12px;color:var(--acc);margin-top:2px}
 .nbtns{display:flex;gap:8px;margin-top:9px}
 .warm{font-size:12px;color:var(--mut);margin:-4px 2px 10px}
+.warm.prt{color:var(--acc);font-weight:650}
+.shortbtn{color:var(--acc);font-size:13px;padding:0}
+.shortbtn.on{font-weight:800}
 .game{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px 12px;margin:6px 0 10px}
 .rank{width:42px;height:42px;flex:none;border-radius:12px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:21px}
 .ach{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
@@ -162,11 +165,12 @@ const UNITS={kg:{l:'kg',w:'kg',r:'reps'},kglado:{l:'kg/lado',w:'kg/lado',r:'reps
 const DAYS=[['seg','Seg','Segunda'],['ter','Ter','Terça'],['qua','Qua','Quarta'],['qui','Qui','Quinta'],['sex','Sex','Sexta']];
 function E(id,name,sets,reps,unit,p,s,ref){return {id,name,sets,reps,unit,p,s:s||[],ref:ref||[]}}
 const C=e=>(e.c=true,e);
+const BS=(e,g)=>(e.bs=g,e);
 const B=e=>(e.bar=true,e);
 // Faixas permitidas: compostos 6-8 ou 8-10, isoladores até 12-15, abdômen 15-20
 const REPS=['6-8','8-10','8-12','10-12','10-15','12-15','15-20'];
 // v2: shape em V — ombro lateral, costas largas e densas, braços; sem stiff, desenvolvimento e esteira
-const DEFAULT_PLAN={v:2,days:{
+const DEFAULT_PLAN={v:3,days:{
  seg:{name:'Peito + Ombro lateral + Tríceps',ex:[
   B(C(E('supino_reto','Supino reto (barra)',3,'6-8','kglado',['peito'],['ombro_frontal','triceps'],[40,45,45]))),
   B(C(E('supino_incl_barra','Supino inclinado (barra)',3,'8-10','kglado',['peito'],['ombro_frontal','triceps'],[30,35,35]))),
@@ -196,8 +200,8 @@ const DEFAULT_PLAN={v:2,days:{
  sex:{name:'Ombros + Braços + Abdômen',ex:[
   E('elev_lat_cross','Elevação lateral unilateral no cross',4,'10-12','kg',['ombro_lateral']),
   E('posterior_cross','Posterior de ombro no cross',4,'12-15','placas',['ombro_posterior'],['trapezio'],[4]),
-  E('rosca_martelo','Rosca martelo (halteres)',3,'8-10','kg',['biceps'],['antebraco'],[20]),
-  E('triceps_corda','Tríceps na polia (corda)',3,'8-10','kg',['triceps']),
+  BS(E('rosca_martelo','Rosca martelo (halteres)',3,'8-10','kg',['biceps'],['antebraco'],[20]),'b1'),
+  BS(E('triceps_corda','Tríceps na polia (corda)',3,'8-10','kg',['triceps']),'b1'),
   E('rosca_inversa','Rosca inversa na polia',2,'10-12','kg',['antebraco'],['biceps']),
   E('abd_vup','Abdominal canivete (V-up)',3,'15-20','corpo',['abdomen'])]}
 }};
@@ -247,8 +251,10 @@ function toast(t){const el=$('#toast');el.textContent=t;el.classList.add('show')
 // ---------- Estado ----------
 let plan=LS.get('plan_v1',null);
 // Plano salvo de uma versão anterior dá lugar ao padrão novo
-const planUpgraded=!!plan&&(plan.v||1)<DEFAULT_PLAN.v;
+const planUpgraded=!!plan&&(plan.v||1)<2;
 if(!plan||planUpgraded){plan=clone(DEFAULT_PLAN);LS.set('plan_v1',plan)}
+else if(plan.v<DEFAULT_PLAN.v){// v3 só junta martelo e tríceps corda em bi-set, sem mexer no resto do plano
+ (plan.days.sex.ex||[]).forEach(e=>{if(e.id==='rosca_martelo'||e.id==='triceps_corda')e.bs='b1'});plan.v=DEFAULT_PLAN.v;LS.set('plan_v1',plan)}
 let sessions=LS.get('sessions_v1',[]);
 let bw=LS.get('bw_v1',[]);
 let drafts=LS.get('drafts_v1',{});
@@ -357,13 +363,17 @@ function updClock(){const el=$('#clock');if(!el)return;const d=getDraft(ui.day);
  if(over&&!d.warned){d.warned=true;saveDrafts();toast('Passou de '+LIMIT_MIN+' min: hora de fechar o treino')}}
 
 // ---------- Troca do dia ----------
-function dayEx(day){const dr=getDraft(day);return plan.days[day].ex.map(e=>(dr.swaps&&dr.swaps[e.id])||e)}
+function dayEx(day){const dr=getDraft(day);return plan.days[day].ex.map(e=>{const x=(dr.swaps&&dr.swaps[e.id])||e;
+ // Treino curto: 1 série a menos nos isoladores, compostos completos
+ return dr.short&&!x.c&&x.unit!=='cardio'&&x.sets>1?{...x,sets:x.sets-1}:x})}
+const estMin=exs=>Math.round(exs.reduce((a,e)=>a+e.sets*(restOf(e)+40),0)/60);
+function biMate(ex){const g=ex.bs?dayEx(ui.day).filter(e=>e.bs===ex.bs):[];return g.length>1?g.find(e=>e.id!==ex.id):null}
 function swapOptions(orig){const cur=new Set(dayEx(ui.day).map(e=>e.id));const main=orig.p[0];const m=new Map();
  const add=e=>{if(!cur.has(e.id)&&!m.has(e.id)&&(e.p||[])[0]===main&&e.unit!=='cardio')m.set(e.id,e)};
  DAYS.forEach(([k])=>plan.days[k].ex.forEach(add));CATALOG.forEach(add);sessions.forEach(s=>s.ex.forEach(add));return [...m.values()]}
 function applySwap(tg){const orig=plan.days[ui.day].ex.find(e=>e.id===ui.swap);const dr=getDraft(ui.day);if(!dr.swaps)dr.swaps={};
  delete dr.vals[orig.id];delete dr.vals[tg.id];
- dr.swaps[orig.id]={...clone(tg),sets:orig.sets,reps:orig.reps,swapOf:orig.id,swapName:orig.name,date:todayStr()};
+ dr.swaps[orig.id]={...clone(tg),sets:orig.sets,reps:orig.reps,bs:orig.bs,swapOf:orig.id,swapName:orig.name,date:todayStr()};
  saveDrafts();closeModal();const y=window.scrollY;render();window.scrollTo(0,y);toast('Trocado só neste treino')}
 // Troca sem série feita não sobrevive à virada do dia
 function dropOldSwaps(){let ch=false;Object.values(drafts).forEach(d=>{Object.entries(d.swaps||{}).forEach(([k,s])=>{if(s.date!==todayStr()&&!(d.vals[s.id]||[]).some(v=>v&&v.done)){delete d.vals[s.id];delete d.swaps[k];ch=true}})});if(ch)saveDrafts();return ch}
@@ -394,16 +404,27 @@ function badge(ex,last){if(capped(ex,last))return '<span class="up">🔒 no máx
  return hitTop(last.e,ex.reps)?'<span class="up">↑ subir carga</span>':''}
 
 // ---------- Aquecimento e barra ----------
-const STEP={kg:2,kglado:2.5,placas:1};
+const stepOf=ex=>ex.unit==='placas'?1:/cross|polia/i.test(ex.name)?5:ex.unit==='kglado'?2.5:2;
 const roundTo=(v,s)=>Math.max(s,Math.round(v/s)*s);
 function workLoad(ex,last){const S=last?validSets(last.e.sets,last.e.unit).filter(s=>s.w):[];
  if(S.length)return Math.max(...S.map(s=>s.w));return ex.ref&&ex.ref.length?Math.max(...ex.ref):null}
 function extraLine(ex,last){const out=[];const u=UNITS[ex.unit]||UNITS.kg;const w=workLoad(ex,last);
  if(capped(ex,last))out.push('Carga máxima do aparelho: progrida com mais reps, descida em 3 s, versão unilateral ou rest-pause.');
- if(w&&ex.c&&STEP[ex.unit]){const ws=[[.5,8],[.7,5],[.85,3]].map(([f,r])=>[roundTo(w*f,STEP[ex.unit]),r]).filter(([v],i,a)=>v<w&&a.findIndex(x=>x[0]===v)===i);
+ if(w&&ex.c&&['kg','kglado','placas'].includes(ex.unit)){const ws=[[.5,8],[.7,5],[.85,3]].map(([f,r])=>[roundTo(w*f,stepOf(ex)),r]).filter(([v],i,a)=>v<w&&a.findIndex(x=>x[0]===v)===i);
   if(ws.length)out.push('Aquecimento: '+ws.map(([v,r])=>fmtN(v)+'×'+r).join(' → ')+' '+u.l)}
  if(w&&ex.bar&&ex.unit==='kglado')out.push(`Na barra: ${fmtN(w)}/lado + barra ${fmtN(cfg.barra)} = ${fmtN(w*2+cfg.barra)} kg`);
- return out.map(t=>`<div class="warm">${t}</div>`).join('')}
+ const pt=prTarget(ex);
+ return (pt?`<div class="warm prt">🏆 Recorde hoje: ${pt}</div>`:'')+out.map(t=>`<div class="warm">${t}</div>`).join('')}
+
+// ---------- Alvo de recorde ----------
+const e1=(w,r)=>w*(1+Math.min(r,15)/30);
+function prTarget(ex){if(ex.unit==='cardio')return null;const H=history(ex.id);if(!H.length)return null;
+ if(ex.unit==='corpo')return (Math.max(...H.map(x=>metric(x.e.sets,x.e.unit,'top')))+1)+' reps';
+ const best=Math.max(...H.map(x=>metric(x.e.sets,x.e.unit,'e1rm')));const L=validSets(H[H.length-1].e.sets,H[H.length-1].e.unit);const w0=Math.max(0,...L.map(s=>s.w||0));if(!w0)return null;
+ const st=stepOf(ex),top=topReps(ex.reps)||10,lo=+(String(ex.reps).match(/^(\d+)/)||[0,1])[1],mx=maxOf(ex),opts=[];
+ // Só sugere recorde dentro da faixa do exercício
+ for(const w of [w0,w0+st,w0+2*st]){if(mx!=null&&w>mx)break;let r=1;while(r<=15&&e1(w,r)<=best+1e-9)r++;r=Math.max(r,lo);if(r<=top&&!opts.some(o=>o[1]===r))opts.push([w,r]);if(opts.length===2)break}
+ return opts.length?opts.map(([w,r])=>fmtN(w)+'×'+r).join(' ou '):null}
 
 // ---------- Semana mais leve ----------
 function deloadWhy(){if(Date.now()<LS.get('deload_snooze',0))return null;const r=sessions.slice(0,3);if(r.length<3)return null;
@@ -425,6 +446,20 @@ function rVBoard(){const ws=wkOf(todayStr());const c=primaryCount(sessions.filte
  return `<div class="h2">Placar do shape em V · esta semana</div><div class="card"><div style="display:flex;justify-content:space-between;align-items:baseline"><span class="r1">Pontuação</span><b style="font-size:22px">${vScore(c)}%</b></div>`+
  VGOALS.map(([m,g])=>{const v=c[m]||0;return `<div class="row" style="display:block"><div style="display:flex;justify-content:space-between"><span class="r1">${MUSCLES[m]}</span><span class="r2">${v} / ${g} séries</span></div><div class="bar"><i style="width:${Math.min(100,v/g*100)}%"></i></div></div>`}).join('')+`</div>`}
 
+// ---------- Missões da semana ----------
+const MISSIONS=[
+ ['pr2','Bata 2 recordes',150,o=>o.prs>=2],
+ ['prc','Bata um recorde num composto',150,o=>o.prc>=1],
+ ['lat','Feche a meta de lateral (8 séries)',150,o=>(o.c.ombro_lateral||0)>=8],
+ ['quick4','Termine 4 treinos em até 60 min',150,o=>o.quick>=4],
+ ['v80','Deixe o placar do shape em V em 80%',150,o=>vScore(o.c)>=80],
+ ['legs','Não pule o treino de perna',100,o=>o.legs>=1],
+ ['feel3','Diga como se sentiu em 3 treinos',50,o=>o.feel>=3],
+ ['back','Faça 15 séries de costas',100,o=>(o.c.costas||0)>=15]];
+// As 3 missões saem da própria semana, então são sempre as mesmas para aquela semana
+function weekMissions(w){let x=0;for(const ch of w)x=(Math.imul(x,31)+ch.charCodeAt(0))>>>0;const idx=[];
+ while(idx.length<3){x=(Math.imul(x,1103515245)+12345)>>>0;const i=(x>>>16)%MISSIONS.length;if(!idx.includes(i))idx.push(i)}return idx.map(i=>MISSIONS[i])}
+
 // ---------- Modo game ----------
 // Tudo sai do histórico: apagar ou importar treinos recalcula XP, nível e conquistas.
 const RANKS=[['⚙️','Ferro'],['🥉','Bronze'],['🥈','Prata'],['🥇','Ouro'],['💠','Platina'],['💎','Diamante'],['⚡','Ascendente'],['👑','Imortal'],['☀️','Radiante']];
@@ -432,25 +467,29 @@ const MAX_LVL=25;
 const rankOf=l=>{const t=Math.min(8,Math.floor((l-1)/3));return [RANKS[t][0],RANKS[t][1]+(t<8?' '+((l-1)%3+1):'')]};
 const fmtInt=n=>Math.round(n).toLocaleString('pt-BR');
 function xpReport(){
- const list=sessions.slice().sort((a,b)=>a.ts<b.ts?-1:1);const best={},per={},weeks={};
+ const list=sessions.slice().sort((a,b)=>a.ts<b.ts?-1:1);const best={},bestW={},per={},weeks={};
  let total=0,prsAll=0,fast=0,legs=0,grit=0;
  list.forEach(s=>{let x=0,prs=0;
-  s.ex.forEach(e=>{const S=validSets(e.sets,e.unit);if(!S.length)return;
+  let prc=0;s.ex.forEach(e=>{const S=validSets(e.sets,e.unit);if(!S.length)return;
+   bestW[e.id]=Math.max(bestW[e.id]||0,...S.map(z=>z.w||0));
    x+=S.length*((e.p||[])[0]==='abdomen'?5:e.c?15:10);
    if(e.unit==='cardio')return;const v=metric(e.sets,e.unit,e.unit==='corpo'?'top':'e1rm');
-   if(best[e.id]!=null&&v>best[e.id])prs++;best[e.id]=Math.max(best[e.id]??v,v)});
+   if(best[e.id]!=null&&v>best[e.id]){prs++;if(e.c)prc++}best[e.id]=Math.max(best[e.id]??v,v)});
   const quick=!!s.dur&&s.dur<=LIMIT_MIN;x+=50+prs*50+(quick?20:0);
-  per[s.id]={xp:x,prs};total+=x;prsAll+=prs;if(quick)fast++;if(s.ex.some(e=>e.id==='leg_press'))legs++;if(prs&&s.feel&&s.feel<=2)grit++;
+  per[s.id]={xp:x,prs,prc,quick};total+=x;prsAll+=prs;if(quick)fast++;if(s.ex.some(e=>e.id==='leg_press'))legs++;if(prs&&s.feel&&s.feel<=2)grit++;
   const w=wkOf(s.date);if(!weeks[w])weeks[w]={days:new Set(),list:[]};weeks[w].days.add(s.day);weeks[w].list.push(s)});
- let perfect=0,lateral=0,vfull=0,run=0,bestRun=0,prev=null;
+ let perfect=0,lateral=0,vfull=0,run=0,bestRun=0,prev=null,missionsDone=0;
+ const statOf=o=>({c:primaryCount(o.list),prs:o.list.reduce((a,s)=>a+per[s.id].prs,0),prc:o.list.reduce((a,s)=>a+per[s.id].prc,0),quick:o.list.filter(s=>per[s.id].quick).length,legs:o.list.filter(s=>s.ex.some(e=>e.id==='leg_press')).length,feel:o.list.filter(s=>s.feel).length});
  Object.keys(weeks).sort().forEach(w=>{const o=weeks[w],n=o.days.size,c=primaryCount(o.list);
   if(n>=5){total+=200;perfect++}else if(n>=4)total+=100;
+  const st=statOf(o);weekMissions(w).forEach(m=>{if(m[3](st)){total+=m[2];missionsDone++}});
   if((c.ombro_lateral||0)>=8)lateral++;if(vScore(c)>=100)vfull++;
   const cons=prev&&wkOf(dstr(new Date(new Date(prev+'T12:00:00').getTime()+7*864e5)))===w;run=n>=4?(cons?run+1:1):0;bestRun=Math.max(bestRun,run);prev=w});
  const cur=wkOf(todayStr());let streak=(weeks[cur]?.days.size||0)>=4?1:0;const d=new Date(cur+'T12:00:00');
  for(;;){d.setDate(d.getDate()-7);if((weeks[dstr(d)]?.days.size||0)>=4)streak++;else break}
+ const cw=weeks[cur],cst=cw?statOf(cw):null;const missions=weekMissions(cur).map(m=>({id:m[0],label:m[1],xp:m[2],done:!!cst&&m[3](cst)}));
  let lvl=1,into=total,need=800;while(lvl<MAX_LVL&&into>=need){into-=need;lvl++;need=800+250*(lvl-1)}
- return {total,per,lvl,into,need,streak,bestRun,perfect,prsAll,fast,legs,grit,lateral,vfull,count:list.length,weekDays:weeks[cur]?weeks[cur].days.size:0}}
+ return {total,per,lvl,into,need,streak,bestRun,perfect,prsAll,fast,legs,grit,lateral,vfull,missions,missionsDone,best:bestW,count:list.length,weekDays:weeks[cur]?weeks[cur].days.size:0}}
 const ACH=[
  ['🏁','Primeiro treino','Finalize 1 treino',r=>r.count>=1],
  ['🔟','10 treinos','Finalize 10 treinos',r=>r.count>=10],
@@ -463,14 +502,24 @@ const ACH=[
  ['🥥','Ombro bola','Meta de lateral em 4 semanas',r=>r.lateral>=4],
  ['📐','Shape em V','Placar 100% numa semana',r=>r.vfull>=1],
  ['⏱️','Pontual','10 treinos em até 60 min',r=>r.fast>=10],
- ['😤','Casca grossa','Recorde num dia fraco ou cansado',r=>r.grit>=1]];
+ ['😤','Casca grossa','Recorde num dia fraco ou cansado',r=>r.grit>=1],
+ ['🎯','Missionário','Complete 10 missões',r=>r.missionsDone>=10],
+ ['🏋️','Clube dos 100','100 kg na barra no supino reto',r=>barTot(r,'supino_reto')>=100],
+ ['🦍','Supino 130','130 kg na barra no supino reto',r=>barTot(r,'supino_reto')>=130],
+ ['🚣','Remada 100','100 kg na barra na remada curvada',r=>barTot(r,'remada_curvada')>=100],
+ ['🦿','Leg press 300','300 kg no leg press',r=>(r.best.leg_press||0)>=300],
+ ['⚖️','Força relativa','Supino com 1,5× o seu peso',r=>{const b=lastBW();return !!b&&barTot(r,'supino_reto')>=1.5*b}]];
+// Marcos de força: carga total na barra (kg/lado × 2 + barra)
+const barTot=(r,id)=>r.best[id]?r.best[id]*2+cfg.barra:0;
+const lastBW=()=>bw.length?bw.slice().sort((a,b)=>a.date<b.date?-1:1).pop().kg:null;
 function rGameChip(){const r=xpReport();const [emo,name]=rankOf(r.lvl);const pct=r.lvl>=MAX_LVL?100:r.into/r.need*100;
- return `<div class="game" data-act="game"><span class="rank">${emo}</span><div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between;font-size:14px"><b>${name}</b><span class="r2">${fmtInt(r.total)} XP</span></div><div class="bar"><i style="width:${pct}%"></i></div><div class="r2" style="margin-top:4px">Semana ${r.weekDays}/5${r.streak?` · 🔥 ${r.streak} ${r.streak===1?'semana':'semanas'} seguidas`:''}</div></div><span class="r2">›</span></div>`}
+ return `<div class="game" data-act="game"><span class="rank">${emo}</span><div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between;font-size:14px"><b>${name}</b><span class="r2">${fmtInt(r.total)} XP</span></div><div class="bar"><i style="width:${pct}%"></i></div><div class="r2" style="margin-top:4px">Semana ${r.weekDays}/5 · 🎯 ${r.missions.filter(m=>m.done).length}/3${r.streak?` · 🔥 ${r.streak} ${r.streak===1?'semana':'semanas'} seguidas`:''}</div></div><span class="r2">›</span></div>`}
 function rGame(){const r=xpReport();const [emo,name]=rankOf(r.lvl);const nx=r.lvl<MAX_LVL?rankOf(r.lvl+1).join(' '):null;const got=ACH.filter(a=>a[3](r)).length;
  return `<h3>${emo} ${name}</h3><div class="bar" style="height:10px"><i style="width:${r.lvl>=MAX_LVL?100:r.into/r.need*100}%"></i></div><div class="exm" style="margin:6px 0 12px">${nx?`Faltam ${fmtInt(r.need-r.into)} XP para ${nx}`:'Rank máximo'} · ${fmtInt(r.total)} XP no total</div>`+
  `<div class="stats"><div class="stat"><div class="v">${r.count}</div><div class="k">treinos</div></div><div class="stat"><div class="v">${r.prsAll}</div><div class="k">recordes</div></div><div class="stat"><div class="v">${r.streak}</div><div class="k">semanas seguidas</div></div></div>`+
+ `<div class="h2">Missões da semana</div><div class="card">${r.missions.map(m=>`<div class="row"><span class="r1" style="${m.done?'color:var(--acc)':''}">${m.done?'✅':'🎯'} ${m.label}</span><span class="r2">+${m.xp} XP</span></div>`).join('')}</div>`+
  `<div class="h2">Conquistas · ${got}/${ACH.length}</div><div class="ach">${ACH.map(([e,l,d,f])=>`<div class="${f(r)?'':'off'}"><span>${e}</span><b>${l}</b><small>${d}</small></div>`).join('')}</div>`+
- `<div class="h2">Como ganhar XP</div><div class="card" style="font-size:14px;color:var(--mut);line-height:1.6">Série de composto +15 · isolador +10 · abdômen +5<br>Treino finalizado +50 · em até ${LIMIT_MIN} min +20<br>Recorde +50 por exercício<br>Semana com 4 treinos +100 · com 5 treinos +200<br>A sequência conta semanas seguidas com 4 ou mais treinos.</div><button class="primary" style="width:100%;margin-top:4px" data-act="close">Bora treinar</button>`}
+ `<div class="h2">Como ganhar XP</div><div class="card" style="font-size:14px;color:var(--mut);line-height:1.6">Série de composto +15 · isolador +10 · abdômen +5<br>Treino finalizado +50 · em até ${LIMIT_MIN} min +20<br>Recorde +50 por exercício<br>Semana com 4 treinos +100 · com 5 treinos +200<br>Missões da semana +50 a +150 cada<br>A sequência conta semanas seguidas com 4 ou mais treinos.</div><button class="primary" style="width:100%;margin-top:4px" data-act="close">Bora treinar</button>`}
 
 // ---------- Render ----------
 const ICONS={
@@ -505,7 +554,7 @@ function rTreino(){
  if(wd===0||wd===6)h+=`<div class="note">Hoje é dia de descanso. Se quiser treinar mesmo assim, escolha o dia acima.</div>`;
  const d=plan.days[ui.day];const dr=getDraft(ui.day);
  const mus=[...new Set(exs.flatMap(e=>e.p))];
- h+=`<div class="dayhead"><div><div class="dtitle">${esc(d.name)}</div><div class="tags">${mus.map(m=>`<span class="tag">${MUSCLES[m]||m}</span>`).join('')}</div></div><button class="ghost" data-act="edit">Editar</button></div>`;
+ h+=`<div class="dayhead"><div><div class="dtitle">${esc(d.name)}</div><div class="tags">${mus.map(m=>`<span class="tag">${MUSCLES[m]||m}</span>`).join('')}</div><div class="exm" style="margin-top:7px">~${estMin(exs)} min · <button class="shortbtn ${dr.short?'on':''}" data-act="short">${dr.short?'⏱ Treino curto ✓':'⏱ Treino curto'}</button></div></div><button class="ghost" data-act="edit">Editar</button></div>`;
  exs.forEach(ex=>h+=exCard(ex,dr));
  h+=`<button class="primary big" data-act="finish">Finalizar treino</button><div class="hint">Pode finalizar mesmo sem fazer todos os exercícios.</div>`;
  if(draftHas(dr))h+=`<button class="link" data-act="discard">Descartar treino em andamento</button>`;
@@ -536,7 +585,7 @@ function exCard(ex,dr){
  }
  const nt=notes[ex.id];
  const swapBtn=ex.unit==='cardio'||dc>0?'':ex.swapOf?`<button data-act="swapundo" data-k="${ex.swapOf}">desfazer troca</button>`:`<button data-act="swap" data-k="${ex.id}">trocar</button>`;
- return `<div class="card" data-card="${ex.id}"><div class="exhead"><div class="exn">${esc(ex.name)}</div><span class="cnt ${all?'full':''}" ${all?`data-act="exclose" data-k="${ex.id}"`:''}>${all?'recolher ▲':dc+'/'+n}</span></div><div class="exm">${ex.unit==='cardio'?esc(ex.reps):ex.sets+' × '+esc(ex.reps)} · ${u.l}</div>${ex.swapOf?`<div class="swapof">No lugar de ${esc(ex.swapName)}</div>`:''}<div class="last">${info}</div>${extraLine(ex,last)}${nt?`<div class="exnote" data-act="note" data-k="${ex.id}">📝 ${esc(nt)}</div>`:''}${rows}<div class="exbtns">${ex.unit!=='cardio'?`<button data-act="addset" data-ex="${ex.id}">+ série</button>`:''}${swapBtn}<button data-act="note" data-k="${ex.id}">${nt?'editar nota':'+ nota'}</button></div></div>`;
+ return `<div class="card" data-card="${ex.id}"><div class="exhead"><div class="exn">${esc(ex.name)}</div><span class="cnt ${all?'full':''}" ${all?`data-act="exclose" data-k="${ex.id}"`:''}>${all?'recolher ▲':dc+'/'+n}</span></div><div class="exm">${ex.unit==='cardio'?esc(ex.reps):ex.sets+' × '+esc(ex.reps)} · ${u.l}</div>${ex.swapOf?`<div class="swapof">No lugar de ${esc(ex.swapName)}</div>`:''}${biMate(ex)?`<div class="swapof">🔗 Bi-set com ${esc(biMate(ex).name)}</div>`:''}<div class="last">${info}</div>${extraLine(ex,last)}${nt?`<div class="exnote" data-act="note" data-k="${ex.id}">📝 ${esc(nt)}</div>`:''}${rows}<div class="exbtns">${ex.unit!=='cardio'?`<button data-act="addset" data-ex="${ex.id}">+ série</button>`:''}${swapBtn}<button data-act="note" data-k="${ex.id}">${nt?'editar nota':'+ nota'}</button></div></div>`;
 }
 
 // Mapa do corpo
@@ -624,6 +673,8 @@ function rEvolucao(){
  h+=`<div class="seg2">${ms.map(m=>`<button class="${ui.evoM===m?'on':''}" data-act="evom" data-k="${m}">${mLabel(ex.unit,m)}</button>`).join('')}</div>`;
  h+=`<div class="card">${chart(pts)}</div>`;
  h+=`<div class="stats"><div class="stat"><div class="v">${fmtN(cur)}</div><div class="k">Atual (${unitL})</div></div><div class="stat"><div class="v">${fmtN(best)}</div><div class="k">Recorde</div></div><div class="stat"><div class="v ${delta>0?'pos':delta<0?'neg':''}">${delta==null?'–':(delta>0?'+':'')+fmtN(delta)}</div><div class="k">vs 4 semanas</div></div></div>`;
+ const isBar=[...DAYS.flatMap(([k])=>plan.days[k].ex),...CATALOG].some(e=>e.id===ex.id&&e.bar);const topW=Math.max(0,...hs.flatMap(x=>validSets(x.e.sets,x.e.unit).map(s=>s.w||0)));const kgb=lastBW();
+ if(isBar&&topW)h+=`<div class="note">Recorde na barra: <b>${fmtN(topW*2+cfg.barra)} kg</b> (${fmtN(topW)}/lado + barra ${fmtN(cfg.barra)})${kgb?` · ${fmtN((topW*2+cfg.barra)/kgb)}× o seu peso`:''}</div>`;
  if(ui.evoM==='e1rm')h+=`<div class="note">1RM estimado é a carga que você levantaria em 1 repetição, calculada a partir das suas séries. Serve pra comparar dias com reps diferentes.</div>`;
  h+=`<div class="h2">Comparar sessões</div><div class="card">`+hs.slice().reverse().slice(0,8).map((x,i,a)=>{const nx=a[i+1];const v=metric(x.e.sets,x.e.unit,ui.evoM),pv=nx?metric(nx.e.sets,nx.e.unit,ui.evoM):null;const dd=pv!=null&&v!=null?v-pv:null;
   const fl=feelOf(x.s);
@@ -704,7 +755,10 @@ const A={
    if(ex.unit==='cardio'&&v.w==null){toast('Coloque os minutos');return}
    v.done=true;if(!dr.startedAt)dr.startedAt=Date.now();
    unlockAudio();
-   if(ex.unit!=='cardio'){startTimer(restOf(ex));const tp=topReps(ex.reps);if(tp&&v.r>tp)toast(overMsg(ex))}
+   if(ex.unit!=='cardio'){const tp=topReps(ex.reps),mate=biMate(ex),first=mate&&dayEx(ui.day).findIndex(e=>e.id===ex.id)<dayEx(ui.day).findIndex(e=>e.id===mate.id);
+    // No bi-set o descanso só vem depois do segundo exercício do par
+    if(first){clearInterval(timer.iv);$('#timer').classList.remove('show')}else startTimer(restOf(ex));
+    if(tp&&v.r>tp)toast(overMsg(ex));else if(first)toast('Bi-set: agora '+mate.name)}
   }
   const n=Math.max(ex.sets,vals.length);const nowAll=vals.slice(0,n).filter(v=>v&&v.done).length>=n;
   if(nowAll)ui.openEx.delete(id);
@@ -728,6 +782,7 @@ const A={
  note:t=>rNote(t.dataset.k),
  notesave:()=>{const v=$('#notein').value.trim();if(v)notes[ui.note]=v;else delete notes[ui.note];saveNotes();closeModal();const y=window.scrollY;render();window.scrollTo(0,y)},
  game:()=>modal(rGame()),
+ short:()=>{const dr=getDraft(ui.day);dr.short=!dr.short;saveDrafts();const y=window.scrollY;render();window.scrollTo(0,y);toast(dr.short?'Treino curto: 1 série a menos nos isoladores':'Treino completo de novo')},
  deloadok:()=>{LS.set('deload_snooze',Date.now()+7*864e5);render()},
  squatlater:()=>{LS.set('squat_snooze',Date.now()+7*864e5);render()},
  squatadd:()=>{const q=plan.days.qua.ex;const lp=q.find(e=>e.id==='leg_press');if(lp)lp.sets=3;
@@ -749,7 +804,7 @@ const A={
    const pr=best!=null&&v>best;const dd=pv!=null?v-pv:null;
    return `<div class="sumx"><b>${esc(e.name)}</b>${pr?'<span class="pr">RECORDE</span>':''}<div style="display:flex;justify-content:space-between;color:var(--mut);font-size:13px"><span>${esc(summarize(e.sets,e.unit))}</span><span class="${dd>0?'pos':dd<0?'neg':''}">${dd==null?'1ª vez':dd>0?'▲':dd<0?'▼':'='}</span></div></div>`}).join('');
   ui.mus='last';
-  modal(`<h3>Treino salvo 💪</h3><div class="xpbox"><b>+${fmtInt(gx)} XP</b>${ps.prs?` · ${ps.prs} ${ps.prs===1?'recorde':'recordes'}`:''}${gx>ps.xp?` · bônus da semana +${fmtInt(gx-ps.xp)}`:''}${xa.lvl>xb.lvl?`<div class="lvup">⬆ Subiu para ${rankOf(xa.lvl).join(' ')}!</div>`:''}</div><div class="feelq">Como você se sentiu hoje?</div>${feelRow(s)}<div class="stats"><div class="stat"><div class="v">${s.dur||'–'}</div><div class="k">minutos</div></div><div class="stat"><div class="v">${ex.reduce((a,e)=>a+e.sets.length,0)}</div><div class="k">séries</div></div><div class="stat"><div class="v">${fmtN(vol/1000)}t</div><div class="k">volume</div></div></div><div class="card">${rows}</div><div class="exm" style="margin:-2px 2px 10px">▲▼ comparam com a última vez que você fez o exercício.</div><div class="mrow"><button class="ghost" data-act="close">Fechar</button><button class="primary" data-act="seemus">Ver músculos</button></div>`);
+  modal(`<h3>Treino salvo 💪</h3><div class="xpbox"><b>+${fmtInt(gx)} XP</b>${ps.prs?` · ${ps.prs} ${ps.prs===1?'recorde':'recordes'}`:''}${gx>ps.xp?` · bônus da semana +${fmtInt(gx-ps.xp)}`:''}${xa.missions.filter((m,i)=>m.done&&!xb.missions[i].done).map(m=>`<div>🎯 Missão cumprida: ${m.label}</div>`).join('')}${xa.lvl>xb.lvl?`<div class="lvup">⬆ Subiu para ${rankOf(xa.lvl).join(' ')}!</div>`:''}</div><div class="feelq">Como você se sentiu hoje?</div>${feelRow(s)}<div class="stats"><div class="stat"><div class="v">${s.dur||'–'}</div><div class="k">minutos</div></div><div class="stat"><div class="v">${ex.reduce((a,e)=>a+e.sets.length,0)}</div><div class="k">séries</div></div><div class="stat"><div class="v">${fmtN(vol/1000)}t</div><div class="k">volume</div></div></div><div class="card">${rows}</div><div class="exm" style="margin:-2px 2px 10px">▲▼ comparam com a última vez que você fez o exercício.</div><div class="mrow"><button class="ghost" data-act="close">Fechar</button><button class="primary" data-act="seemus">Ver músculos</button></div>`);
   render();
  },
  seemus:()=>{closeModal();ui.tab='musculos';render();window.scrollTo(0,0)},
@@ -784,7 +839,7 @@ document.addEventListener('click',e=>{
 document.addEventListener('change',e=>{
  const t=e.target;
  if(t.id==='bfile'&&t.files&&t.files[0]){const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(d.app!=='treino'||!Array.isArray(d.sessions))throw 0;
-   confirmBox(`Substituir os dados atuais por esse backup (${d.sessions.length} treinos)?`,()=>{plan=d.plan&&(d.plan.v||1)>=DEFAULT_PLAN.v?d.plan:plan;sessions=d.sessions;bw=d.bw||[];notes=d.notes||{};sortS();cache();saveNotes();LS.set('backup_at',Date.parse(d.exportedAt)||Date.now());render();toast('Backup restaurado')});
+   confirmBox(`Substituir os dados atuais por esse backup (${d.sessions.length} treinos)?`,()=>{plan=d.plan&&(d.plan.v||1)>=2?d.plan:plan;sessions=d.sessions;bw=d.bw||[];notes=d.notes||{};sortS();cache();saveNotes();LS.set('backup_at',Date.parse(d.exportedAt)||Date.now());render();toast('Backup restaurado')});
    const b=$('#sheet .primary');if(b)b.textContent='Restaurar';}catch(err){toast('Arquivo de backup inválido')}};r.readAsText(t.files[0]);t.value='';return}
  if(t.dataset.act==='evoex'){ui.evoEx=t.value;render();return}
  if(t.dataset.ek)editField(t);

@@ -575,14 +575,17 @@ const uS=s=>s.u||Date.parse(s.ts)||1,uB=b=>b.u||Date.parse(b.date)||1;
 var Sync={busy:false,again:false,quiet:false,t:null,
  on(){return !!(cfg.srv&&cfg.tok)},
  url(){return cfg.srv.trim().replace(/\/+$/,'')+'/api/sync'},
- soon(){if(this.quiet||!this.on())return;clearTimeout(this.t);this.t=setTimeout(()=>this.run(),1500)},
- payload(){const t=LS.get('tomb_v1',TOMB0()),nu=LS.get('notes_u',{});
-  return {sessions:[...sessions.map(s=>({...s,u:uS(s)})),...Object.entries(t.s).map(([id,u])=>({id,u,del:true}))],
-   bw:[...bw.map(b=>({...b,u:uB(b)})),...Object.entries(t.bw).map(([date,u])=>({date,u,del:true}))],
-   notes:[...Object.entries(notes).map(([id,text])=>({id,text,u:nu[id]||1})),...Object.entries(t.n).map(([id,u])=>({id,u,del:true}))],
-   plan:{data:plan,u:LS.get('plan_u',1)}}},
- async run(manual){if(!this.on())return;if(this.busy){this.again=true;return}this.busy=true;
-  try{const r=await fetch(this.url(),{method:'POST',headers:{'Authorization':'Bearer '+cfg.tok.trim(),'Content-Type':'application/json'},body:JSON.stringify(this.payload())});
+ soon(){if(this.quiet||!this.on())return;clearTimeout(this.t);this.t=setTimeout(()=>{this.t=null;this.run()},300)},
+ // Saindo do app com envio pendente: manda já, só o que mudou, com keepalive para o iPhone não cortar no meio
+ flush(){if(!this.t)return;clearTimeout(this.t);this.t=null;this.run(false,true)},
+ payload(since=0){const t=LS.get('tomb_v1',TOMB0()),nu=LS.get('notes_u',{});
+  return {sessions:[...sessions.filter(s=>uS(s)>since).map(s=>({...s,u:uS(s)})),...Object.entries(t.s).map(([id,u])=>({id,u,del:true}))],
+   bw:[...bw.filter(b=>uB(b)>since).map(b=>({...b,u:uB(b)})),...Object.entries(t.bw).map(([date,u])=>({date,u,del:true}))],
+   notes:[...Object.entries(notes).filter(([id])=>(nu[id]||1)>since).map(([id,text])=>({id,text,u:nu[id]||1})),...Object.entries(t.n).map(([id,u])=>({id,u,del:true}))],
+   plan:LS.get('plan_u',1)>since?{data:plan,u:LS.get('plan_u',1)}:null}},
+ async run(manual,leaving){if(!this.on())return;if(this.busy&&!leaving){this.again=true;return}this.busy=true;
+  const body=JSON.stringify(this.payload(leaving?Math.max(0,LS.get('sync_at',0)-60000):0));
+  try{const r=await fetch(this.url(),{method:'POST',keepalive:!!leaving&&body.length<60000,headers:{'Authorization':'Bearer '+cfg.tok.trim(),'Content-Type':'application/json'},body});
    if(!r.ok)throw new Error(r.status===401?'token inválido':'erro '+r.status);
    const ch=this.merge(await r.json());LS.set('sync_at',Date.now());LS.set('sync_err','');
    if(ch){this.quiet=true;cache();LS.set('notes_v1',notes);this.quiet=false;if(!$('#modal').classList.contains('show'))render()}
@@ -967,8 +970,9 @@ if(planUpgraded)toast('Treino novo carregado');
 syncAwake();
 Sync.run();
 window.addEventListener('online',()=>Sync.run());
+window.addEventListener('pagehide',()=>Sync.flush());
 setInterval(updClock,15000);
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState!=='visible')return;if(dropOldSwaps())render();updClock();syncAwake();Sync.run()});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState!=='visible'){Sync.flush();return}if(dropOldSwaps())render();updClock();syncAwake();Sync.run()});
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});
 </script>
